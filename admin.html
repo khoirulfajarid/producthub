@@ -1,0 +1,661 @@
+<!DOCTYPE html>
+<html lang="id" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Panel Admin — ProductHub Creator</title>
+
+  <!-- Dashboard tidak boleh muncul di hasil pencarian -->
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="theme-color" content="#FAFAFA">
+
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111'/><text x='16' y='23' font-family='sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'>P</text></svg>">
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <link rel="stylesheet" href="assets/css/style.css">
+
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('ph_theme');
+        if (t) document.documentElement.setAttribute('data-theme', t);
+      } catch (e) {}
+    })();
+  </script>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     LAYAR MASUK
+     Tampil sampai PIN ditukar dengan token sesi yang sah.
+     ══════════════════════════════════════════════════════════ -->
+<div id="authScreen" class="auth-screen">
+  <div class="auth-box">
+    <div class="brand">
+      <span class="brand-mark">P</span>
+      <span>ProductHub</span>
+    </div>
+    <p class="auth-sub">Panel Admin</p>
+
+    <div id="authInfo" class="body-sm text-secondary" style="margin-bottom:18px"></div>
+
+    <form id="pinLoginForm" onsubmit="submitPinLogin(event)">
+      <div class="field">
+        <label for="pinInput">PIN Admin</label>
+        <input type="password" class="input" id="pinInput" autocomplete="current-password"
+               required placeholder="Masukkan PIN Anda">
+      </div>
+      <button type="submit" class="btn btn-primary btn-block">
+        <span data-icon="lock" data-icon-size="16"></span> Masuk
+      </button>
+    </form>
+
+    <div class="auth-foot">
+      <a href="index.html">← Kembali ke landing page</a>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     DASHBOARD
+     ══════════════════════════════════════════════════════════ -->
+<div id="adminApp" class="app-view">
+  <div class="admin-layout">
+
+    <div id="sidebarBackdrop" class="sidebar-backdrop" onclick="closeSidebar()"></div>
+
+    <!-- ── SIDEBAR ── -->
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-head">
+        <div class="brand"><span class="brand-mark">P</span><span id="sidebarBrand">ProductHub</span></div>
+        <div class="sub">Admin Panel</div>
+      </div>
+
+      <ul class="sidebar-nav">
+        <li><a href="#" onclick="navigateTo('dashboard'); return false;" data-section="dashboard" class="active">
+          <span data-icon="grid"></span> Dashboard</a></li>
+        <li><a href="#" onclick="navigateTo('produk'); return false;" data-section="produk">
+          <span data-icon="box"></span> Produk</a></li>
+        <li><a href="#" onclick="navigateTo('hero'); return false;" data-section="hero">
+          <span data-icon="layout"></span> Konten Hero</a></li>
+        <li><a href="#" onclick="navigateTo('keunggulan'); return false;" data-section="keunggulan">
+          <span data-icon="zap"></span> Keunggulan</a></li>
+        <li><a href="#" onclick="navigateTo('testimoni'); return false;" data-section="testimoni">
+          <span data-icon="quote"></span> Testimoni</a></li>
+        <li><a href="#" onclick="navigateTo('laporan'); return false;" data-section="laporan">
+          <span data-icon="chart"></span> Laporan</a></li>
+        <li><a href="#" onclick="navigateTo('pengaturan'); return false;" data-section="pengaturan">
+          <span data-icon="gear"></span> Pengaturan</a></li>
+      </ul>
+
+      <div class="sidebar-foot stack-sm">
+        <a class="btn btn-secondary btn-block btn-sm" href="index.html" target="_blank" rel="noopener">
+          <span data-icon="external" data-icon-size="16"></span> Lihat Landing Page
+        </a>
+        <button class="btn btn-danger btn-block btn-sm" onclick="logoutAdmin()">
+          <span data-icon="logout" data-icon-size="16"></span> Keluar
+        </button>
+      </div>
+    </aside>
+
+    <!-- ── KONTEN ── -->
+    <div class="admin-main">
+      <div class="admin-topbar">
+        <div class="row-gap">
+          <button class="btn-icon" onclick="toggleSidebar()" id="sidebarToggleBtn"
+                  aria-label="Buka menu" style="display:none">
+            <span data-icon="menu"></span>
+          </button>
+          <h1 id="adminPageTitle" class="h-md">Dashboard</h1>
+        </div>
+        <div class="row-gap">
+          <span id="adminIdentity" class="body-sm text-secondary"></span>
+          <button class="btn-icon" onclick="toggleTheme()" aria-label="Ganti mode gelap/terang">
+            <span data-theme-icon></span>
+          </button>
+        </div>
+      </div>
+
+      <div class="admin-body">
+
+        <!-- ═══ SECTION: DASHBOARD ═══ -->
+        <section id="section-dashboard" class="content-section active">
+          <div class="grid grid-4" id="kpiGrid" style="margin-bottom:24px"></div>
+          <div class="grid" style="grid-template-columns:2fr 1fr;margin-bottom:24px" id="dashRow">
+            <div class="card card-pad">
+              <div class="row-between" style="margin-bottom:20px">
+                <h3 class="h-md">Pengunjung 7 Hari Terakhir</h3>
+              </div>
+              <div class="chart-box"><canvas id="chart7Hari"></canvas></div>
+            </div>
+            <div class="insight-panel">
+              <h3 class="h-md">Analisis Otomatis</h3>
+              <ul id="insightList"></ul>
+            </div>
+          </div>
+          <div class="card">
+            <div class="row-between card-pad" style="border-bottom:1px solid var(--border)">
+              <h3 class="h-md">Produk Terbaru</h3>
+              <button class="btn-ghost btn" onclick="navigateTo('produk')">Lihat Semua</button>
+            </div>
+            <div class="table-wrap" id="dashProdukTable"></div>
+          </div>
+        </section>
+
+        <!-- ═══ SECTION: PRODUK ═══ -->
+        <section id="section-produk" class="content-section">
+          <div class="row-between" style="margin-bottom:20px">
+            <p class="body-sm text-secondary" style="margin:0">
+              Kelola semua produk, harga, dan status ketersediaan.
+            </p>
+            <button class="btn btn-primary" onclick="openProdukModal()">
+              <span data-icon="plus" data-icon-size="16"></span> Tambah Produk
+            </button>
+          </div>
+
+          <div class="card card-pad" style="margin-bottom:20px">
+            <div class="field-row" style="margin:0">
+              <div class="field" style="margin:0">
+                <input type="text" class="input" id="produkSearch" placeholder="Cari nama produk…"
+                       oninput="handleProdukSearch(this.value)">
+              </div>
+              <div class="field" style="margin:0">
+                <select class="input" id="produkFilterStatus" onchange="renderProdukTable()">
+                  <option value="">Semua Status</option>
+                  <option value="Published">Published</option>
+                  <option value="Draft">Draft</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <div class="card">
+            <div class="table-wrap" id="produkTableWrap"></div>
+          </div>
+        </section>
+
+        <!-- ═══ SECTION: KONTEN HERO ═══ -->
+        <section id="section-hero" class="content-section">
+          <div class="card card-pad" style="max-width:780px">
+            <h3 class="h-md" style="margin-bottom:20px">Hero Section</h3>
+            <form id="heroForm" onsubmit="submitHero(event)">
+              <div class="field">
+                <label for="heroInHeadline">Headline Utama</label>
+                <input type="text" class="input" id="heroInHeadline" name="Headline" required>
+              </div>
+              <div class="field">
+                <label for="heroInSub">Sub-headline</label>
+                <textarea class="input" id="heroInSub" name="Subheadline" rows="3"></textarea>
+              </div>
+              <div class="field">
+                <label>Slide Hero <span class="text-secondary" style="font-weight:400">(2–5 gambar)</span></label>
+                <div class="upload-zone" onclick="pickFile('heroFile')">
+                  <span data-icon="upload"></span>
+                  <div class="body-sm" style="margin-top:8px">
+                    Klik untuk menambah gambar slide — PNG, JPG, atau WebP (maks. 5 MB)
+                  </div>
+                </div>
+                <input type="file" id="heroFile" accept="image/*" multiple class="hidden"
+                       onchange="uploadHeroSlides(this)">
+                <input type="hidden" id="heroInSlides" name="HeroSlides">
+                <div class="slide-list" id="heroSlideList"></div>
+                <div class="hint" id="heroSlideHint">
+                  Slideshow berjalan otomatis. Dengan satu gambar, hero tampil diam.
+                </div>
+              </div>
+
+              <div class="field" style="max-width:260px">
+                <label for="heroInDelay">Jeda Antar Slide (detik)</label>
+                <input type="number" class="input" id="heroInDelay" min="2" max="20" step="1">
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="heroInCta">Teks CTA Utama</label>
+                  <input type="text" class="input" id="heroInCta" name="TeksCTA">
+                </div>
+                <div class="field">
+                  <label for="heroInCtaSec">Teks CTA Sekunder</label>
+                  <input type="text" class="input" id="heroInCtaSec" name="TeksCTASekunder">
+                </div>
+              </div>
+
+              <hr style="border:none;border-top:1px solid var(--border);margin:28px 0">
+              <h3 class="h-md" style="margin-bottom:20px">Section Penutup</h3>
+              <div class="field">
+                <label for="heroInClosingTitle">Judul Penutup</label>
+                <input type="text" class="input" id="heroInClosingTitle" name="JudulPenutup">
+              </div>
+              <div class="field">
+                <label for="heroInClosingDesc">Deskripsi Penutup</label>
+                <textarea class="input" id="heroInClosingDesc" name="DeskripsiPenutup" rows="2"></textarea>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="heroInClosingCta">Teks Tombol Penutup</label>
+                  <input type="text" class="input" id="heroInClosingCta" name="TeksCTAPenutup">
+                </div>
+                <div class="field">
+                  <label for="heroInClosingLink">Link Tombol Penutup</label>
+                  <input type="url" class="input" id="heroInClosingLink" name="LinkCTAPenutup"
+                         placeholder="https://wa.me/62…">
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary">Simpan Konten</button>
+            </form>
+          </div>
+        </section>
+
+        <!-- ═══ SECTION: KEUNGGULAN ═══ -->
+        <section id="section-keunggulan" class="content-section">
+          <div class="row-between" style="margin-bottom:20px">
+            <p class="body-sm text-secondary" style="margin:0">
+              Empat poin yang tampil tepat di bawah hero. Ubah teksnya sesuai penawaran Anda.
+            </p>
+            <button class="btn btn-primary" onclick="openKeunggulanModal()">
+              <span data-icon="plus" data-icon-size="16"></span> Tambah Poin
+            </button>
+          </div>
+          <div class="card card-pad" id="keunggulanList"></div>
+        </section>
+
+        <!-- ═══ SECTION: TESTIMONI ═══ -->
+        <section id="section-testimoni" class="content-section">
+          <div class="row-between" style="margin-bottom:20px">
+            <p class="body-sm text-secondary" style="margin:0">
+              Testimoni yang tayang di section Social Proof.
+            </p>
+            <button class="btn btn-primary" onclick="openTestimoniModal()">
+              <span data-icon="plus" data-icon-size="16"></span> Tambah Testimoni
+            </button>
+          </div>
+          <div class="card"><div class="table-wrap" id="testimoniTableWrap"></div></div>
+        </section>
+
+        <!-- ═══ SECTION: LAPORAN ═══ -->
+        <section id="section-laporan" class="content-section">
+          <div class="row-between" style="margin-bottom:20px">
+            <p class="body-sm text-secondary" style="margin:0">
+              Performa landing page dalam 30 hari terakhir.
+            </p>
+            <button class="btn btn-secondary" onclick="exportCsv()">
+              <span data-icon="download" data-icon-size="16"></span> Export CSV
+            </button>
+          </div>
+          <div class="grid grid-3" id="laporanKpi" style="margin-bottom:24px"></div>
+          <div class="grid" style="grid-template-columns:1fr 1fr;margin-bottom:24px" id="laporanCharts">
+            <div class="card card-pad">
+              <h3 class="h-md" style="margin-bottom:20px">Tren Pengunjung</h3>
+              <div class="chart-box"><canvas id="chartTrafik"></canvas></div>
+            </div>
+            <div class="card card-pad">
+              <h3 class="h-md" style="margin-bottom:20px">Interaksi per Produk</h3>
+              <div class="chart-box"><canvas id="chartProduk"></canvas></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-pad" style="border-bottom:1px solid var(--border)">
+              <h3 class="h-md">Produk dengan Performa Terbaik</h3>
+            </div>
+            <div class="table-wrap" id="rankingTableWrap"></div>
+          </div>
+        </section>
+
+        <!-- ═══ SECTION: PENGATURAN ═══ -->
+        <section id="section-pengaturan" class="content-section">
+          <div class="card card-pad" style="max-width:640px">
+            <h3 class="h-md" style="margin-bottom:20px">Identitas & Angka Social Proof</h3>
+            <form id="configForm" onsubmit="submitConfig(event)">
+              <div class="field">
+                <label for="cfgAppName">Nama Aplikasi / Brand</label>
+                <input type="text" class="input" id="cfgAppName" name="appName">
+              </div>
+              <div class="field">
+                <label for="cfgTagline">Tagline Footer</label>
+                <input type="text" class="input" id="cfgTagline" name="tagline">
+              </div>
+              <div class="field">
+                <label for="cfgWa">Nomor WhatsApp (format 62…)</label>
+                <input type="text" class="input" id="cfgWa" name="waNumber" placeholder="6281234567890">
+              </div>
+
+              <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+              <h3 class="h-md" style="margin-bottom:6px">Angka Social Proof</h3>
+              <p class="body-sm text-secondary" style="margin-bottom:18px">
+                Empat kotak angka di section "Dipercaya Para Kreator". Label maupun nilainya bebas Anda tentukan.
+              </p>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgLabel1">Label 1</label>
+                  <input type="text" class="input" id="cfgLabel1" name="statLabel1">
+                </div>
+                <div class="field">
+                  <label for="cfgValue1">Nilai 1</label>
+                  <input type="text" class="input" id="cfgValue1" name="statValue1">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgLabel2">Label 2</label>
+                  <input type="text" class="input" id="cfgLabel2" name="statLabel2">
+                </div>
+                <div class="field">
+                  <label for="cfgValue2">Nilai 2</label>
+                  <input type="text" class="input" id="cfgValue2" name="statValue2">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgLabel3">Label 3</label>
+                  <input type="text" class="input" id="cfgLabel3" name="statLabel3">
+                </div>
+                <div class="field">
+                  <label for="cfgValue3">Nilai 3</label>
+                  <input type="text" class="input" id="cfgValue3" name="statValue3">
+                </div>
+              </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgLabel4">Label 4</label>
+                  <input type="text" class="input" id="cfgLabel4" name="statLabel4">
+                </div>
+                <div class="field">
+                  <label for="cfgValue4">Nilai 4</label>
+                  <input type="text" class="input" id="cfgValue4" name="statValue4">
+                </div>
+              </div>
+
+              <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+              <h3 class="h-md" style="margin-bottom:6px">Kecepatan Animasi</h3>
+              <p class="body-sm text-secondary" style="margin-bottom:18px">
+                Angka lebih besar = gerakan lebih lambat. Satuannya detik untuk satu putaran penuh.
+              </p>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgDemoSpeed">Kecepatan "Lihat Aksinya"</label>
+                  <input type="number" class="input" id="cfgDemoSpeed" name="demoSpeed" min="10" max="180">
+                </div>
+                <div class="field">
+                  <label for="cfgTestiSpeed">Kecepatan Testimoni</label>
+                  <input type="number" class="input" id="cfgTestiSpeed" name="testiSpeed" min="10" max="180">
+                </div>
+              </div>
+
+              <button type="submit" class="btn btn-primary">Simpan Pengaturan</button>
+            </form>
+          </div>
+
+          <div class="card card-pad" style="max-width:640px;margin-top:24px">
+            <h3 class="h-md" style="margin-bottom:8px">Keamanan Dashboard</h3>
+            <p class="body-sm text-secondary" style="margin-bottom:20px">
+              PIN adalah satu-satunya jalur masuk ke dashboard. Karena frontend berada di
+              domain terpisah, identitas akun Google tidak terbaca oleh server —
+              login berbasis email tidak lagi tersedia.
+              Setelah PIN diganti, sesi yang sedang berjalan di perangkat lain tetap
+              berlaku sampai masa 6 jam-nya habis.
+            </p>
+            <form id="pinForm" onsubmit="submitPinChange(event)">
+              <div class="field">
+                <label for="cfgPinBaru">PIN Admin Baru</label>
+                <input type="password" class="input" id="cfgPinBaru" minlength="6"
+                       placeholder="Minimal 6 karakter" autocomplete="new-password">
+                <div class="hint">Gunakan kombinasi yang tidak mudah ditebak.</div>
+              </div>
+              <div class="field">
+                <label for="cfgPinUlang">Ulangi PIN Baru</label>
+                <input type="password" class="input" id="cfgPinUlang" minlength="6"
+                       placeholder="Ketik ulang PIN" autocomplete="new-password">
+              </div>
+              <button type="submit" class="btn btn-primary">Ganti PIN</button>
+            </form>
+          </div>
+
+          <div class="card card-pad" style="max-width:640px;margin-top:24px">
+            <h3 class="h-md" style="margin-bottom:8px">Diagnostik Koneksi</h3>
+            <p class="body-sm text-secondary" style="margin-bottom:20px">
+              Periksa apakah frontend benar-benar tersambung ke backend Apps Script Anda.
+            </p>
+            <button type="button" class="btn btn-secondary" onclick="cekKoneksi(this)">
+              Uji Koneksi ke API
+            </button>
+            <div id="pingHasil" class="body-sm text-secondary" style="margin-top:14px"></div>
+          </div>
+        </section>
+
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL
+     ══════════════════════════════════════════════════════════ -->
+
+<!-- Modal: Form Produk -->
+<div id="modalProduk" class="modal-backdrop-ph">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 class="h-md" id="produkModalTitle">Tambah Produk Baru</h3>
+      <button class="btn-icon" onclick="closeModal('modalProduk')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <form id="produkForm" onsubmit="submitProduk(event)">
+      <div class="modal-body">
+        <input type="hidden" id="prodId" name="ID">
+
+        <div class="field">
+          <label for="prodNama">Nama Produk *</label>
+          <input type="text" class="input" id="prodNama" name="NamaProduk" required
+                 placeholder="Misal: UI Kit Premium">
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="prodHarga">Harga (Rp)</label>
+            <input type="number" class="input" id="prodHarga" name="Harga" min="0" placeholder="0">
+          </div>
+          <div class="field">
+            <label for="prodStatus">Status</label>
+            <select class="input" id="prodStatus" name="Status">
+              <option value="Published">Published</option>
+              <option value="Draft">Draft</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="prodDesk">Deskripsi</label>
+          <textarea class="input" id="prodDesk" name="Deskripsi" rows="4"
+                    placeholder="Tuliskan deskripsi lengkap produk…"></textarea>
+        </div>
+
+        <div class="field">
+          <label>Thumbnail Produk</label>
+          <div class="upload-zone" onclick="pickFile('prodFile')">
+            <span data-icon="upload"></span>
+            <div class="body-sm" style="margin-top:8px">Klik untuk unggah — PNG, JPG, atau WebP (maks. 5 MB)</div>
+          </div>
+          <input type="file" id="prodFile" accept="image/*" class="hidden"
+                 onchange="uploadImage(this,'thumbnail','prodThumb','prodPreview')">
+          <input type="hidden" id="prodThumb" name="Thumbnail">
+          <img id="prodPreview" class="upload-preview hidden" alt="Pratinjau thumbnail">
+        </div>
+
+        <div class="field">
+          <label for="prodDemo">URL Demo Aplikasi</label>
+          <input type="url" class="input" id="prodDemo" name="LinkDemo" placeholder="https://">
+          <div class="hint">Tampil sebagai tombol "Lihat Demo" dan mengisi section Demo Aplikasi.</div>
+        </div>
+
+        <div class="field">
+          <label for="prodCheckout">URL Checkout</label>
+          <input type="url" class="input" id="prodCheckout" name="LinkCheckout"
+                 placeholder="https://wa.me/62… atau https://lynk.id/…">
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="prodBadge">Label Khusus</label>
+            <input type="text" class="input" id="prodBadge" name="Badge" placeholder="Bestseller, Baru, …">
+          </div>
+          <div class="field">
+            <label for="prodUrutan">Urutan Tampil</label>
+            <input type="number" class="input" id="prodUrutan" name="Urutan" min="1" placeholder="1">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="prodLink">Link/File Produk (internal)</label>
+          <input type="url" class="input" id="prodLink" name="LinkProduk" placeholder="https://">
+          <div class="hint">Tidak pernah dikirim ke landing page — hanya catatan untuk Anda.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modalProduk')">Batal</button>
+        <button type="submit" class="btn btn-primary" id="produkSubmitBtn">Simpan Produk</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Form Testimoni -->
+<div id="modalTestimoni" class="modal-backdrop-ph">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 class="h-md" id="testiModalTitle">Tambah Testimoni</h3>
+      <button class="btn-icon" onclick="closeModal('modalTestimoni')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <form id="testimoniForm" onsubmit="submitTestimoni(event)">
+      <div class="modal-body">
+        <input type="hidden" id="testiId" name="ID">
+        <div class="field-row">
+          <div class="field">
+            <label for="testiNama">Nama Pelanggan *</label>
+            <input type="text" class="input" id="testiNama" name="Nama" required>
+          </div>
+          <div class="field">
+            <label for="testiJabatan">Jabatan / Keterangan</label>
+            <input type="text" class="input" id="testiJabatan" name="Jabatan">
+          </div>
+        </div>
+        <div class="field">
+          <label for="testiIsi">Isi Testimoni *</label>
+          <textarea class="input" id="testiIsi" name="Isi" rows="4" required></textarea>
+        </div>
+        <div class="field">
+          <label>Foto (opsional)</label>
+          <div class="upload-zone" onclick="pickFile('testiFile')">
+            <span data-icon="upload"></span>
+            <div class="body-sm" style="margin-top:8px">Klik untuk unggah foto</div>
+          </div>
+          <input type="file" id="testiFile" accept="image/*" class="hidden"
+                 onchange="uploadImage(this,'testimoni','testiFoto','testiPreview')">
+          <input type="hidden" id="testiFoto" name="Foto">
+          <img id="testiPreview" class="upload-preview hidden" alt="Pratinjau foto">
+        </div>
+        <div class="field">
+          <label for="testiStatus">Status</label>
+          <select class="input" id="testiStatus" name="Status">
+            <option value="Published">Published</option>
+            <option value="Draft">Draft</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modalTestimoni')">Batal</button>
+        <button type="submit" class="btn btn-primary" id="testiSubmitBtn">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Form Keunggulan -->
+<div id="modalKeunggulan" class="modal-backdrop-ph">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 class="h-md" id="keunggulanModalTitle">Tambah Poin Keunggulan</h3>
+      <button class="btn-icon" onclick="closeModal('modalKeunggulan')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <form id="keunggulanForm" onsubmit="submitKeunggulan(event)">
+      <div class="modal-body">
+        <input type="hidden" id="keunId" name="ID">
+        <div class="field-row">
+          <div class="field">
+            <label for="keunIkon">Ikon</label>
+            <select class="input" id="keunIkon" name="Ikon" onchange="previewIkon()"></select>
+            <div class="hint row-gap" style="margin-top:10px">
+              <span id="keunIkonPreview" class="feature-icon" style="margin:0"></span>
+              <span>Pratinjau ikon</span>
+            </div>
+          </div>
+          <div class="field">
+            <label for="keunUrutan">Urutan Tampil</label>
+            <input type="number" class="input" id="keunUrutan" name="Urutan" min="1">
+          </div>
+        </div>
+        <div class="field">
+          <label for="keunJudul">Judul *</label>
+          <input type="text" class="input" id="keunJudul" name="Judul" required
+                 placeholder="Misal: Sangat Ringan">
+        </div>
+        <div class="field">
+          <label for="keunDesk">Deskripsi</label>
+          <textarea class="input" id="keunDesk" name="Deskripsi" rows="3"
+                    placeholder="Satu sampai dua kalimat singkat."></textarea>
+        </div>
+        <div class="field">
+          <label for="keunStatus">Status</label>
+          <select class="input" id="keunStatus" name="Status">
+            <option value="Published">Published</option>
+            <option value="Draft">Draft</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modalKeunggulan')">Batal</button>
+        <button type="submit" class="btn btn-primary" id="keunSubmitBtn">Simpan</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Konfirmasi Hapus -->
+<div id="modalKonfirmasi" class="modal-backdrop-ph">
+  <div class="modal-box narrow">
+    <div class="modal-head">
+      <h3 class="h-md">Konfirmasi</h3>
+      <button class="btn-icon" onclick="closeModal('modalKonfirmasi')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="konfirmasiPesan" class="body-lg" style="margin:0"></p>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-secondary" onclick="closeModal('modalKonfirmasi')">Batal</button>
+      <button type="button" class="btn btn-danger" id="konfirmasiBtn">Hapus</button>
+    </div>
+  </div>
+</div>
+
+<!-- Tumpukan notifikasi -->
+<div id="toastStack" class="toast-stack"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/ui.js"></script>
+<script src="assets/js/api.js"></script>
+<script src="assets/js/admin.js"></script>
+</body>
+</html>

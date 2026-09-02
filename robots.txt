@@ -1,0 +1,8 @@
+# ProductHub Creator
+# Ganti domain di bawah dengan URL GitHub Pages Anda.
+
+User-agent: *
+Allow: /
+Disallow: /admin.html
+
+Sitemap: https://github.com/khoirulfajarid/producthub.git
