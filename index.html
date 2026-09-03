@@ -16,14 +16,14 @@
        ══════════════════════════════════════════════════════════ -->
   <title>ProductHub Creator — Produk Digital dengan Bukti Demo Nyata</title>
   <meta name="description" content="Bangun, kelola, dan skalakan produk digital Anda. Setiap produk disertai demo yang bisa dicoba langsung — bukti, bukan sekadar janji.">
-  <link rel="canonical" href="https://github.com/khoirulfajarid/producthub.git/">
+  <link rel="canonical" href="https://khoirulfajarid.github.io/producthub/">
 
   <meta property="og:type" content="website">
   <meta property="og:site_name" content="ProductHub Creator">
   <meta property="og:title" content="ProductHub Creator — Produk Digital dengan Bukti Demo Nyata">
   <meta property="og:description" content="Setiap produk disertai demo yang bisa dicoba langsung sebelum membeli.">
-  <meta property="og:url" content="https://username.github.io/producthub/">
-  <meta property="og:image" content="https://username.github.io/producthub/assets/og-image.jpg">
+  <meta property="og:url" content="https://khoirulfajarid.github.io/producthub/">
+  <meta property="og:image" content="https://khoirulfajarid.github.io/producthub/assets/og-image.jpg">
   <meta name="twitter:card" content="summary_large_image">
 
   <meta name="robots" content="index, follow">
@@ -37,7 +37,7 @@
     "@context": "https://schema.org",
     "@type": "Organization",
     "name": "ProductHub Creator",
-    "url": "https://username.github.io/producthub/",
+    "url": "https://khoirulfajarid.github.io/producthub/",
     "description": "Penyedia produk digital untuk kreator — setiap produk disertai demo yang bisa dicoba langsung."
   }
   </script>
@@ -232,6 +232,39 @@
 
 
 <!-- ══════════════════════════════════════════════════════════
+     BUKTI NYATA — tangkapan layar & video dari pengguna
+     ══════════════════════════════════════════════════════════ -->
+<section id="sec-bukti" class="section">
+  <div class="container-ph">
+    <div class="section-head">
+      <h2 class="h-lg" id="buktiJudul">Bukti Nyata dari Pengguna</h2>
+      <p class="body-lg text-secondary" style="margin-top:12px" id="buktiSub">
+        Tangkapan layar dan video asli dari mereka yang sudah memakainya.
+      </p>
+      <p class="body-sm text-secondary" style="margin-top:8px">
+        Klik salah satu untuk memperbesar. Sentuh atau arahkan kursor untuk menghentikan sejenak.
+      </p>
+    </div>
+  </div>
+
+  <div class="marquee" id="buktiMarquee">
+    <div class="marquee-track to-right" id="buktiTrack"></div>
+    <div class="paused-hint">Dijeda</div>
+  </div>
+
+  <div class="container-ph center" style="margin-top:40px" data-kirim-cta>
+    <p class="body-sm text-secondary" style="margin-bottom:16px">
+      Sudah memakai produk kami? Kirimkan testimoni dan tangkapan layar Anda —
+      akan kami tayangkan di halaman ini setelah diperiksa.
+    </p>
+    <button class="btn btn-secondary" onclick="bukaFormKirim()">
+      <span data-icon="send" data-icon-size="16"></span> Kirim Testimoni &amp; Bukti
+    </button>
+  </div>
+</section>
+
+
+<!-- ══════════════════════════════════════════════════════════
      PENUTUP
      ══════════════════════════════════════════════════════════ -->
 <section class="section section-dark">
@@ -266,6 +299,7 @@
           <li><a href="#sec-produk"    onclick="scrollToSection('produk'); return false;">Produk</a></li>
           <li><a href="#sec-demo"      onclick="scrollToSection('demo'); return false;">Demo</a></li>
           <li><a href="#sec-testimoni" onclick="scrollToSection('testimoni'); return false;">Testimoni</a></li>
+          <li><a href="#sec-bukti"     onclick="scrollToSection('bukti'); return false;">Bukti Nyata</a></li>
         </ul>
       </div>
       <div>
@@ -281,6 +315,185 @@
     </div>
   </div>
 </footer>
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: Lightbox bukti nyata
+     ══════════════════════════════════════════════════════════ -->
+<div id="modalLightbox" class="modal-backdrop-ph modal-lightbox">
+  <div class="lightbox-box">
+    <div class="lightbox-head">
+      <span id="lightboxPos" class="body-sm text-secondary">1 / 1</span>
+      <button class="btn-icon" onclick="closeModal('modalLightbox')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+
+    <div class="lightbox-panggung">
+      <button class="lightbox-nav prev" onclick="geserLightbox(-1)" aria-label="Sebelumnya">
+        <span data-icon="chevronLeft"></span>
+      </button>
+      <div class="lightbox-isi" id="lightboxIsi"></div>
+      <button class="lightbox-nav next" onclick="geserLightbox(1)" aria-label="Berikutnya">
+        <span data-icon="chevronRight"></span>
+      </button>
+    </div>
+
+    <p class="lightbox-cap body-sm" id="lightboxCap"></p>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: Detail produk — galeri gambar & video
+     ══════════════════════════════════════════════════════════ -->
+<div id="modalDetail" class="modal-backdrop-ph">
+  <div class="modal-box modal-lebar">
+    <div class="modal-head">
+      <div class="row-gap" style="gap:10px">
+        <h3 class="h-md" id="detailJudul">Detail Produk</h3>
+        <span class="badge-chip badge-accent hidden" id="detailBadge"></span>
+      </div>
+      <button class="btn-icon" onclick="closeModal('modalDetail')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+
+    <div class="modal-body">
+      <div class="detail-panggung">
+        <button class="lightbox-nav prev" onclick="geserDetail(-1)" aria-label="Media sebelumnya">
+          <span data-icon="chevronLeft"></span>
+        </button>
+        <div class="detail-slides" id="detailSlides"></div>
+        <button class="lightbox-nav next" onclick="geserDetail(1)" aria-label="Media berikutnya">
+          <span data-icon="chevronRight"></span>
+        </button>
+      </div>
+      <div class="hero-dots" id="detailDots" style="margin:16px 0 24px"></div>
+
+      <div class="detail-harga" id="detailHarga"></div>
+      <p class="detail-desc" id="detailDesc"></p>
+    </div>
+
+    <div class="modal-foot" id="detailActions"></div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: Form kiriman member (testimoni + bukti)
+     ══════════════════════════════════════════════════════════ -->
+<div id="modalKirim" class="modal-backdrop-ph">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 class="h-md">Kirim Testimoni &amp; Bukti</h3>
+      <button class="btn-icon" onclick="closeModal('modalKirim')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+
+    <!-- Pesan setelah berhasil terkirim -->
+    <div id="kirimSukses" class="hidden">
+      <div class="modal-body center">
+        <div class="sukses-ikon"><span data-icon="checkCircle" data-icon-size="34"></span></div>
+        <h4 class="h-md" style="margin:16px 0 8px">Terima kasih!</h4>
+        <p class="body-sm text-secondary" style="max-width:380px;margin:0 auto">
+          Testimoni Anda sudah kami terima. Admin akan memeriksanya lebih dulu —
+          setelah disetujui, nama dan cerita Anda akan tayang di halaman ini
+          bersama gambar buktinya.
+        </p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-primary" onclick="closeModal('modalKirim')">Tutup</button>
+      </div>
+    </div>
+
+    <form id="kirimForm" onsubmit="submitKirimTestimoni(event)">
+      <div class="modal-body">
+        <p class="body-sm text-secondary" style="margin:0 0 20px">
+          Yang tampil di halaman publik hanya <strong>nama, foto profil, testimoni,</strong>
+          dan <strong>gambar bukti</strong> Anda. Email, nomor HP, dan saran hanya dibaca admin.
+        </p>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="kNama">Nama *</label>
+            <input type="text" class="input" id="kNama" name="nama" required
+                   maxlength="80" placeholder="Nama yang ingin ditampilkan">
+          </div>
+          <div class="field">
+            <label for="kJabatan">Pekerjaan / Asal</label>
+            <input type="text" class="input" id="kJabatan" name="jabatan"
+                   maxlength="80" placeholder="Misal: Founder Kelas Online">
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="kTestimoni">Testimoni Anda *</label>
+          <textarea class="input" id="kTestimoni" name="testimoni" rows="4" required
+                    maxlength="1500" placeholder="Ceritakan pengalaman Anda memakai produk ini…"></textarea>
+          <div class="hint">Minimal 10 karakter. Inilah yang akan tayang di section Testimoni.</div>
+        </div>
+
+        <div class="field">
+          <label for="kSaran">Saran untuk Kami</label>
+          <textarea class="input" id="kSaran" name="saran" rows="3"
+                    maxlength="1500" placeholder="Ada yang bisa kami perbaiki? (opsional)"></textarea>
+          <div class="hint">Hanya dibaca admin — tidak pernah ditampilkan ke publik.</div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="kEmail">Email</label>
+            <input type="email" class="input" id="kEmail" name="email"
+                   maxlength="120" placeholder="nama@email.com">
+          </div>
+          <div class="field">
+            <label for="kHp">Nomor WhatsApp</label>
+            <input type="tel" class="input" id="kHp" name="noHp"
+                   maxlength="30" placeholder="08…">
+          </div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label>Foto Profil Anda</label>
+            <div class="upload-zone kecil" onclick="document.getElementById('kFileProfil').click()">
+              <span data-icon="upload" data-icon-size="18"></span>
+              <div class="body-sm" style="margin-top:6px">Pilih foto (maks. 3 MB)</div>
+            </div>
+            <input type="file" id="kFileProfil" accept="image/*" class="hidden"
+                   onchange="pilihBerkasKirim(this,'profil')">
+            <img id="previewProfil" class="upload-preview bulat hidden" alt="Pratinjau foto profil">
+          </div>
+
+          <div class="field">
+            <label>Gambar Bukti *</label>
+            <div class="upload-zone kecil" onclick="document.getElementById('kFileBukti').click()">
+              <span data-icon="image" data-icon-size="18"></span>
+              <div class="body-sm" style="margin-top:6px">Tangkapan layar (maks. 3 MB)</div>
+            </div>
+            <input type="file" id="kFileBukti" accept="image/*" class="hidden"
+                   onchange="pilihBerkasKirim(this,'bukti')">
+            <img id="previewBukti" class="upload-preview hidden" alt="Pratinjau gambar bukti">
+          </div>
+        </div>
+
+        <div class="hint" style="margin-top:4px">
+          Gambar bukti misalnya tangkapan layar dashboard aplikasi yang sedang Anda pakai.
+          Inilah yang tampil di section "Bukti Nyata".
+        </div>
+      </div>
+
+      <div class="modal-foot">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modalKirim')">Batal</button>
+        <button type="submit" class="btn btn-primary" id="kirimBtn">
+          <span data-icon="send" data-icon-size="16"></span> Kirim Testimoni
+        </button>
+      </div>
+    </form>
+  </div>
+</div>
+
 
 <!-- Tumpukan notifikasi -->
 <div id="toastStack" class="toast-stack"></div>

@@ -5,4 +5,4 @@ User-agent: *
 Allow: /
 Disallow: /admin.html
 
-Sitemap: https://github.com/khoirulfajarid/producthub.git
+Sitemap: https://khoirulfajarid.github.io/producthub/sitemap.xml

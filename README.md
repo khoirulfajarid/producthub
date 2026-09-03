@@ -2,7 +2,11 @@
 
 Landing page produk digital dengan panel admin — **frontend statis di GitHub Pages, backend REST API di Google Apps Script.**
 
-Setiap produk disertai demo yang bisa dicoba pengunjung sebelum membeli. Data produk, hero, keunggulan, testimoni, dan statistik dikelola lewat dashboard, tersimpan di Google Sheets, dan media diunggah ke Google Drive.
+Setiap produk disertai demo yang bisa dicoba pengunjung sebelum membeli. Data produk, hero, keunggulan, testimoni, bukti nyata, dan statistik dikelola lewat dashboard, tersimpan di Google Sheets, dan media diunggah ke Google Drive.
+
+**Baru di v3** — section *Bukti Nyata* berisi tangkapan layar dan video YouTube dari pengguna sungguhan; member bisa mengirim testimoni beserta buktinya sendiri lewat form publik yang diverifikasi admin; kartu produk membuka popup galeri gambar & video; dan angka social proof berhitung naik saat terlihat.
+
+Sudah pernah men-deploy v2? Ikuti **[PANDUAN_UPGRADE_V3.md](PANDUAN_UPGRADE_V3.md)** — data lama tetap utuh.
 
 ---
 
@@ -51,9 +55,19 @@ Backend hanya mengembalikan JSON. Bentuk balasan selalu sama:
 
 | Action | Fungsi |
 |---|---|
-| `?action=init` | Seluruh isi landing page dalam satu panggilan |
+| `?action=init` | Seluruh isi landing page dalam satu panggilan (termasuk galeri bukti) |
 | `?action=track&tipe=view\|cta\|demo&id=` | Catat statistik (fire & forget) |
 | `?action=ping` | Cek koneksi, versi API, dan kesiapan database |
+
+### POST publik — tanpa token
+
+| Action | Fungsi |
+|---|---|
+| `submitTestimoni` | Kiriman testimoni + bukti dari member → antrean `Pengajuan` |
+
+Satu-satunya jalur tulis yang terbuka untuk umum. Hasilnya tidak pernah langsung
+tayang: statusnya `Baru` sampai admin menyetujui. Dibatasi gambar saja (maks. 3 MB),
+teks maks. 1.500 karakter, dan jeda 3 detik antar kiriman.
 
 ### POST — butuh token sesi
 
@@ -70,6 +84,9 @@ Body dikirim sebagai `text/plain;charset=utf-8` berisi JSON `{action, token, dat
 | `saveHero` | Konten hero + daftar slide |
 | `saveKeunggulan` / `deleteKeunggulan` | CRUD keunggulan |
 | `saveTestimoni` / `deleteTestimoni` | CRUD testimoni |
+| `saveGaleri` / `deleteGaleri` | CRUD bukti nyata (gambar & video YouTube) |
+| `approvePengajuan` | Setujui kiriman member → testimoni **dan** bukti tayang sekaligus |
+| `rejectPengajuan` / `deletePengajuan` | Tolak (arsipkan) atau hapus kiriman |
 | `saveConfig` | AppConfig, termasuk ganti PIN |
 | `uploadMedia` | base64 → Google Drive → URL publik |
 

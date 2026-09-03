@@ -86,6 +86,11 @@
           <span data-icon="zap"></span> Keunggulan</a></li>
         <li><a href="#" onclick="navigateTo('testimoni'); return false;" data-section="testimoni">
           <span data-icon="quote"></span> Testimoni</a></li>
+        <li><a href="#" onclick="navigateTo('galeri'); return false;" data-section="galeri">
+          <span data-icon="image"></span> Bukti Nyata</a></li>
+        <li><a href="#" onclick="navigateTo('pengajuan'); return false;" data-section="pengajuan">
+          <span data-icon="inbox"></span> Pengajuan
+          <span class="nav-badge hidden" id="badgePengajuan">0</span></a></li>
         <li><a href="#" onclick="navigateTo('laporan'); return false;" data-section="laporan">
           <span data-icon="chart"></span> Laporan</a></li>
         <li><a href="#" onclick="navigateTo('pengaturan'); return false;" data-section="pengaturan">
@@ -276,6 +281,44 @@
           <div class="card"><div class="table-wrap" id="testimoniTableWrap"></div></div>
         </section>
 
+        <!-- ═══ SECTION: BUKTI NYATA (GALERI) ═══ -->
+        <section id="section-galeri" class="content-section">
+          <div class="row-between" style="margin-bottom:20px">
+            <p class="body-sm text-secondary" style="margin:0;max-width:520px">
+              Tangkapan layar dan video yang berjalan di section "Bukti Nyata".
+              Tempel tautan YouTube atau unggah gambar — jenisnya dikenali otomatis.
+            </p>
+            <button class="btn btn-primary" onclick="openGaleriModal()">
+              <span data-icon="plus" data-icon-size="16"></span> Tambah Bukti
+            </button>
+          </div>
+
+          <div id="galeriKosong" class="card empty-state hidden">
+            <div class="h-md">Belum ada bukti</div>
+            <p class="body-sm">Tambahkan tangkapan layar atau video, atau setujui kiriman dari member
+              di menu Pengajuan — buktinya otomatis masuk ke sini.</p>
+          </div>
+          <div class="galeri-grid" id="galeriGrid"></div>
+        </section>
+
+        <!-- ═══ SECTION: PENGAJUAN MEMBER ═══ -->
+        <section id="section-pengajuan" class="content-section">
+          <div class="row-between" style="margin-bottom:20px">
+            <p class="body-sm text-secondary" style="margin:0;max-width:560px">
+              Kiriman testimoni dari member lewat form di landing page.
+              Setujui untuk menayangkan testimoni <em>dan</em> gambar buktinya sekaligus.
+            </p>
+            <select class="input" id="filterPengajuan" style="max-width:190px"
+                    onchange="renderPengajuan()">
+              <option value="Baru">Perlu Diperiksa</option>
+              <option value="Disetujui">Sudah Disetujui</option>
+              <option value="Ditolak">Ditolak</option>
+              <option value="">Semua</option>
+            </select>
+          </div>
+          <div id="pengajuanList"></div>
+        </section>
+
         <!-- ═══ SECTION: LAPORAN ═══ -->
         <section id="section-laporan" class="content-section">
           <div class="row-between" style="margin-bottom:20px">
@@ -385,6 +428,62 @@
                   <input type="number" class="input" id="cfgTestiSpeed" name="testiSpeed" min="10" max="180">
                 </div>
               </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgGaleriSpeed">Kecepatan "Bukti Nyata"</label>
+                  <input type="number" class="input" id="cfgGaleriSpeed" name="galeriSpeed" min="10" max="180">
+                </div>
+                <div class="field"></div>
+              </div>
+
+              <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+              <h3 class="h-md" style="margin-bottom:6px">Animasi Angka Statistik</h3>
+              <p class="body-sm text-secondary" style="margin-bottom:18px">
+                Angka social proof dapat berhitung naik dari nol saat pengunjung
+                menggulir sampai ke section tersebut. Durasi lebih kecil = hitungan lebih cepat.
+              </p>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgStatCount">Animasi Hitung Naik</label>
+                  <select class="input" id="cfgStatCount" name="statCountEnabled">
+                    <option value="1">Aktif</option>
+                    <option value="0">Nonaktif — tampilkan angka langsung</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="cfgStatDurasi">Durasi Hitungan (milidetik)</label>
+                  <input type="number" class="input" id="cfgStatDurasi" name="statCountDuration"
+                         min="300" max="8000" step="100" placeholder="2000">
+                  <div class="hint">2000 = 2 detik.</div>
+                </div>
+              </div>
+
+              <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
+              <h3 class="h-md" style="margin-bottom:6px">Section Bukti Nyata &amp; Form Member</h3>
+              <p class="body-sm text-secondary" style="margin-bottom:18px">
+                Judul section pembuktian, serta saklar untuk membuka atau menutup
+                form kiriman testimoni dari member.
+              </p>
+              <div class="field">
+                <label for="cfgGaleriJudul">Judul Section</label>
+                <input type="text" class="input" id="cfgGaleriJudul" name="galeriJudul"
+                       placeholder="Bukti Nyata dari Pengguna">
+              </div>
+              <div class="field">
+                <label for="cfgGaleriSub">Sub-judul Section</label>
+                <input type="text" class="input" id="cfgGaleriSub" name="galeriSubjudul"
+                       placeholder="Tangkapan layar dan video asli dari mereka yang sudah memakainya.">
+              </div>
+              <div class="field">
+                <label for="cfgFormMember">Form Kiriman Member</label>
+                <select class="input" id="cfgFormMember" name="formMemberEnabled">
+                  <option value="1">Dibuka — member boleh mengirim testimoni</option>
+                  <option value="0">Ditutup — tombol kirim disembunyikan</option>
+                </select>
+                <div class="hint">
+                  Bagikan tautan <code>index.html#kirim</code> ke member — form langsung terbuka.
+                </div>
+              </div>
 
               <button type="submit" class="btn btn-primary">Simpan Pengaturan</button>
             </form>
@@ -486,6 +585,43 @@
                  onchange="uploadImage(this,'thumbnail','prodThumb','prodPreview')">
           <input type="hidden" id="prodThumb" name="Thumbnail">
           <img id="prodPreview" class="upload-preview hidden" alt="Pratinjau thumbnail">
+        </div>
+
+        <div class="field">
+          <label>Galeri Produk</label>
+          <p class="body-sm text-secondary" style="margin:0 0 10px">
+            Gambar dan video yang muncul saat pengunjung mengklik kartu produk ini
+            di landing page. Thumbnail di atas otomatis menjadi slide pertama.
+          </p>
+
+          <div class="upload-zone kecil" onclick="pickFile('prodGaleriFile')">
+            <span data-icon="upload" data-icon-size="18"></span>
+            <div class="body-sm" style="margin-top:6px">
+              Unggah gambar tampilan aplikasi — bisa pilih beberapa sekaligus
+            </div>
+          </div>
+          <input type="file" id="prodGaleriFile" accept="image/*" multiple class="hidden"
+                 onchange="unggahGaleriProduk(this)">
+
+          <div class="field-row" style="margin-top:12px">
+            <div class="field" style="margin:0">
+              <input type="url" class="input" id="prodYoutubeUrl"
+                     placeholder="https://youtube.com/watch?v=…">
+            </div>
+            <div class="field" style="margin:0">
+              <button type="button" class="btn btn-secondary btn-block"
+                      onclick="tambahVideoProduk()">
+                <span data-icon="film" data-icon-size="16"></span> Tambah Video YouTube
+              </button>
+            </div>
+          </div>
+
+          <textarea class="input" id="prodGaleri" name="Galeri" rows="4"
+                    style="margin-top:12px;font-family:var(--font-mono,monospace);font-size:13px"
+                    placeholder="Satu URL per baris — gambar atau tautan YouTube"></textarea>
+          <div class="hint">
+            Satu URL per baris. Urutan baris = urutan slide. Hapus baris untuk membuang media.
+          </div>
         </div>
 
         <div class="field">
@@ -631,6 +767,84 @@
 </div>
 
 <!-- Modal: Konfirmasi Hapus -->
+<!-- Modal: Tambah / Edit Bukti Nyata -->
+<div id="modalGaleri" class="modal-backdrop-ph">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 class="h-md" id="galeriModalTitle">Tambah Bukti</h3>
+      <button class="btn-icon" onclick="closeModal('modalGaleri')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <form id="galeriForm" onsubmit="submitGaleri(event)">
+      <div class="modal-body">
+        <input type="hidden" id="galId" name="ID">
+
+        <div class="field">
+          <label>Unggah Gambar</label>
+          <div class="upload-zone kecil" onclick="pickFile('galFile')">
+            <span data-icon="upload" data-icon-size="18"></span>
+            <div class="body-sm" style="margin-top:6px">
+              Tangkapan layar — PNG, JPG, atau WebP (maks. 5 MB)
+            </div>
+          </div>
+          <input type="file" id="galFile" accept="image/*" class="hidden"
+                 onchange="uploadImage(this,'galeri','galUrl','galPreview')">
+          <img id="galPreview" class="upload-preview hidden" alt="Pratinjau bukti">
+        </div>
+
+        <div class="field">
+          <label for="galUrl">URL Gambar atau Video YouTube *</label>
+          <input type="url" class="input" id="galUrl" name="Url" required
+                 placeholder="https://… (terisi otomatis setelah unggah)">
+          <div class="hint">
+            Tempel tautan YouTube untuk menampilkan video, atau biarkan terisi
+            otomatis oleh unggahan di atas.
+          </div>
+        </div>
+
+        <div class="field">
+          <label for="galJudul">Keterangan</label>
+          <input type="text" class="input" id="galJudul" name="Judul"
+                 placeholder="Misal: Dashboard penjualan milik Budi">
+          <div class="hint">Tampil sebagai keterangan di bawah gambar.</div>
+        </div>
+
+        <div class="field-row">
+          <div class="field">
+            <label for="galStatus">Status</label>
+            <select class="input" id="galStatus" name="Status">
+              <option value="Published">Published — tayang</option>
+              <option value="Draft">Draft — disembunyikan</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="galUrutan">Urutan Tampil</label>
+            <input type="number" class="input" id="galUrutan" name="Urutan" min="1" placeholder="1">
+          </div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-secondary" onclick="closeModal('modalGaleri')">Batal</button>
+        <button type="submit" class="btn btn-primary" id="galeriSubmitBtn">Simpan Bukti</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Pratinjau gambar (dipakai antrean pengajuan & galeri) -->
+<div id="modalPratinjau" class="modal-backdrop-ph modal-lightbox">
+  <div class="lightbox-box">
+    <div class="lightbox-head">
+      <span id="pratinjauCap" class="body-sm text-secondary"></span>
+      <button class="btn-icon" onclick="closeModal('modalPratinjau')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <div class="lightbox-isi" id="pratinjauIsi"></div>
+  </div>
+</div>
+
 <div id="modalKonfirmasi" class="modal-backdrop-ph">
   <div class="modal-box narrow">
     <div class="modal-head">

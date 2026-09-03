@@ -46,6 +46,15 @@ const ICONS = {
   image:    '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/>',
   home:     '<path d="m3 10 9-7 9 7v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M9 22V12h6v10"/>',
 
+  play:        '<path d="m6 3 15 9-15 9V3z"/>',
+  send:        '<path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7z"/>',
+  inbox:       '<path d="M22 12h-6l-2 3h-4l-2-3H2"/><path d="M5.4 5.1 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.4-6.9A2 2 0 0 0 16.8 4H7.2a2 2 0 0 0-1.8 1.1z"/>',
+  checkCircle: '<circle cx="12" cy="12" r="9"/><path d="m8.5 12.5 2.5 2.5 4.5-5"/>',
+  xCircle:     '<circle cx="12" cy="12" r="9"/><path d="m15 9-6 6M9 9l6 6"/>',
+  film:        '<rect x="2" y="3" width="20" height="18" rx="2"/><path d="M7 3v18M17 3v18M2 9h5M2 15h5M17 9h5M17 15h5"/>',
+  mail:        '<rect x="2" y="4" width="20" height="16" rx="2"/><path d="m2 7 10 6 10-6"/>',
+  phone:       '<path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1 1 .4 1.9.7 2.8a2 2 0 0 1-.4 2.1L8.1 9.9a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.8.7a2 2 0 0 1 1.7 2z"/>',
+
   chevronLeft:  '<path d="m15 18-6-6 6-6"/>',
   chevronRight: '<path d="m9 18 6-6-6-6"/>',
   arrowLeft:    '<path d="M19 12H5M12 19l-7-7 7-7"/>',
@@ -122,6 +131,178 @@ function formatTanggal(iso) {
 
 function inisial(nama) {
   return String(nama || '?').trim().charAt(0).toUpperCase();
+}
+
+// ── Media: YouTube & daftar URL ─────────────────────────────
+
+/**
+ * Ambil ID video dari berbagai bentuk tautan YouTube yang biasa disalin
+ * orang: tautan panjang, tautan pendek youtu.be, /embed/, dan /shorts/.
+ *
+ * Mengembalikan '' bila bukan tautan YouTube — pemanggilnya memakai itu
+ * untuk memutuskan apakah media ini gambar atau video.
+ */
+function youtubeId(url) {
+  const s = String(url || '');
+  const pola = [
+    /[?&]v=([A-Za-z0-9_-]{11})/,
+    /youtu\.be\/([A-Za-z0-9_-]{11})/,
+    /youtube\.com\/embed\/([A-Za-z0-9_-]{11})/,
+    /youtube\.com\/shorts\/([A-Za-z0-9_-]{11})/
+  ];
+  for (let i = 0; i < pola.length; i++) {
+    const m = s.match(pola[i]);
+    if (m) return m[1];
+  }
+  return '';
+}
+
+function youtubeThumb(id) {
+  return 'https://i.ytimg.com/vi/' + id + '/hqdefault.jpg';
+}
+
+/** URL embed. Autoplay hanya dipakai saat pengunjung sendiri yang menekan putar. */
+function youtubeEmbed(id, autoplay) {
+  return 'https://www.youtube.com/embed/' + id +
+         '?rel=0&modestbranding=1' + (autoplay ? '&autoplay=1' : '');
+}
+
+/** Jenis media dari URL — dipakai galeri bukti maupun galeri produk. */
+function jenisMedia(url) {
+  return youtubeId(url) ? 'youtube' : 'image';
+}
+
+/**
+ * Pecah teks berisi banyak URL (satu per baris, atau dipisah koma)
+ * menjadi array URL yang sudah divalidasi.
+ */
+function bacaDaftarUrl(teks, maks) {
+  return String(teks || '')
+    .split(/[\n,]+/)
+    .map(function (s) { return safeUrl(s.trim()); })
+    .filter(function (s) { return s; })
+    .slice(0, maks || 20);
+}
+
+/**
+ * Gambar pengganti saat sebuah berkas tidak bisa dimuat.
+ *
+ * Sumber gambar di aplikasi ini berada di luar kendali halaman: berkas Drive
+ * bisa dihapus pemiliknya, dan sampul YouTube bisa hilang bila videonya
+ * dijadikan privat. Ikon "gambar rusak" bawaan browser membuat halaman
+ * terlihat tidak terurus — kotak abu-abu netral jauh lebih baik.
+ */
+const GAMBAR_PENGGANTI =
+  'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="400">' +
+    '<rect width="640" height="400" fill="#F2F2F2"/>' +
+    '<g stroke="#B8B8B8" stroke-width="2" fill="none" ' +
+    'transform="translate(296 176) scale(2)">' +
+    '<rect x="0" y="0" width="24" height="24" rx="2"/>' +
+    '<circle cx="8.5" cy="8.5" r="1.5"/><path d="m24 15-5-5L2 24"/></g>' +
+    '<text x="320" y="330" font-family="system-ui,sans-serif" font-size="18" ' +
+    'fill="#8A8A8A" text-anchor="middle">Gambar tidak dapat dimuat</text></svg>');
+
+/**
+ * Pasang sekali di setiap halaman. Memakai fase capture karena event
+ * "error" pada <img> tidak menggelembung ke atas seperti event biasa,
+ * sehingga satu pemasang di tingkat dokumen cukup untuk semua gambar —
+ * termasuk yang baru dibuat belakangan lewat innerHTML.
+ */
+function pasangPenggantiGambar() {
+  document.addEventListener('error', function (e) {
+    const el = e.target;
+    if (!el || el.tagName !== 'IMG') return;
+    if (el.dataset.gagal === '1') return;   // cegah putaran tanpa akhir
+    el.dataset.gagal = '1';
+    el.src = GAMBAR_PENGGANTI;
+  }, true);
+}
+
+/** Baca berkas menjadi base64 tanpa prefix data: — dipakai semua unggahan. */
+function bacaFileBase64(file) {
+  return new Promise(function (resolve, reject) {
+    const reader = new FileReader();
+    reader.onload = function () {
+      resolve({
+        base64: String(reader.result).split(',')[1],
+        dataUrl: String(reader.result)
+      });
+    };
+    reader.onerror = function () { reject(new Error('Berkas gagal dibaca.')); };
+    reader.readAsDataURL(file);
+  });
+}
+
+// ── Animasi angka (count-up) ────────────────────────────────
+
+/**
+ * Pisahkan "10.000+" menjadi { prefix:'', angka:10000, suffix:'+', desimal:0 }
+ * sehingga angkanya bisa dianimasikan tanpa kehilangan format aslinya.
+ *
+ * Format Indonesia: titik = pemisah ribuan, koma = desimal.
+ * Nilai yang tidak mengandung angka sama sekali (misal "—") dikembalikan
+ * apa adanya dan tidak dianimasikan.
+ */
+function uraikanAngka(teks) {
+  const s = String(teks === null || teks === undefined ? '' : teks).trim();
+  const m = s.match(/^([^\d]*)([\d.,]+)(.*)$/);
+  if (!m) return null;
+
+  const mentah = m[2];
+  const desimal = mentah.indexOf(',') !== -1 ? mentah.split(',')[1].length : 0;
+  const angka = Number(mentah.replace(/\./g, '').replace(',', '.'));
+  if (!isFinite(angka)) return null;
+
+  return { prefix: m[1], angka: angka, suffix: m[3], desimal: desimal };
+}
+
+function formatAngkaId(nilai, desimal) {
+  return nilai.toLocaleString('id-ID', {
+    minimumFractionDigits: desimal,
+    maximumFractionDigits: desimal
+  });
+}
+
+/**
+ * Hitung angka naik dari 0 sampai nilai tujuan.
+ *
+ * Memakai requestAnimationFrame (bukan setInterval) supaya gerakannya
+ * mengikuti kecepatan layar dan berhenti sendiri saat tab tidak aktif.
+ * Kurva easing membuat angka melambat menjelang akhir — terasa jauh
+ * lebih hidup daripada kenaikan linear.
+ *
+ * Pengunjung yang mengaktifkan "reduce motion" langsung melihat angka final.
+ */
+function animasiAngka(el, teksTujuan, durasiMs) {
+  const bagian = uraikanAngka(teksTujuan);
+
+  if (!bagian) { el.textContent = teksTujuan; return; }
+
+  const kurangiGerak = window.matchMedia &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const durasi = Math.max(200, Number(durasiMs) || 2000);
+
+  if (kurangiGerak || durasi < 250) {
+    el.textContent = teksTujuan;
+    return;
+  }
+
+  const mulai = performance.now();
+
+  function langkah(sekarang) {
+    const t = Math.min(1, (sekarang - mulai) / durasi);
+    const eased = 1 - Math.pow(1 - t, 3);   // ease-out cubic
+    el.textContent = bagian.prefix +
+      formatAngkaId(bagian.angka * eased, bagian.desimal) +
+      bagian.suffix;
+
+    if (t < 1) requestAnimationFrame(langkah);
+    else el.textContent = teksTujuan;   // pastikan hasil akhir persis
+  }
+
+  el.textContent = bagian.prefix + formatAngkaId(0, bagian.desimal) + bagian.suffix;
+  requestAnimationFrame(langkah);
 }
 
 // ════════════════════════════════════════════════════════════

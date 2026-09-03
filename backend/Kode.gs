@@ -39,7 +39,7 @@
 const APP_NAME    = 'ProductHub Creator';
 const FOLDER_NAME = 'ProductHub_Creator';
 const SS_NAME     = 'DB_ProductHub_Creator';
-const API_VERSION = '2.0';
+const API_VERSION = '3.0';
 
 /**
  * PIN admin awal. WAJIB Anda ganti sebelum menjalankan setupAppEnvironment().
@@ -66,7 +66,10 @@ const CONFIG = {
   get ROOT_FOLDER_ID()     { return prop('folderId'); },
   get THUMBNAIL_FOLDER_ID(){ return prop('thumbnailFolderId'); },
   get HERO_FOLDER_ID()     { return prop('heroFolderId'); },
-  get TESTIMONI_FOLDER_ID(){ return prop('testimoniFolderId'); }
+  get TESTIMONI_FOLDER_ID(){ return prop('testimoniFolderId'); },
+  get GALERI_FOLDER_ID()   { return prop('galeriFolderId'); },
+  get PROFIL_FOLDER_ID()   { return prop('profilFolderId'); },
+  get BUKTI_FOLDER_ID()    { return prop('buktiFolderId'); }
 };
 
 const SHEETS = {
@@ -74,8 +77,21 @@ const SHEETS = {
   HERO:       'KontenHero',
   KEUNGGULAN: 'Keunggulan',
   TESTIMONI:  'Testimoni',
+  GALERI:     'Galeri',
+  PENGAJUAN:  'Pengajuan',
   STATISTIK:  'Statistik',
   CONFIG:     'AppConfig'
+};
+
+/**
+ * Batas untuk kiriman publik (form member).
+ * Endpoint submitTestimoni terbuka tanpa token — batas inilah yang
+ * menjaga agar tidak ada yang membanjiri Drive dan sheet Anda.
+ */
+const BATAS_KIRIMAN = {
+  UKURAN_GAMBAR: 3 * 1024 * 1024,  // 3 MB per gambar (sebelum base64)
+  PANJANG_TEKS:  1500,             // karakter maksimum per kolom teks
+  JEDA_GLOBAL:   3000              // ms — jarak minimum antar kiriman
 };
 
 function prop(key) {
@@ -188,6 +204,11 @@ function doPost(e) {
     if (action === 'login')  return buildResponse(login(data.pin));
     if (action === 'logout') return buildResponse(logout(token));
 
+    // Form publik: member mengirim testimoni + bukti. Sengaja tanpa token —
+    // pengunjung tidak punya PIN. Isinya masuk ke antrean Pengajuan dan
+    // TIDAK tayang sebelum admin menyetujui.
+    if (action === 'submitTestimoni') return buildResponse(terimaPengajuan(data));
+
     // ── Mulai sini seluruhnya butuh sesi yang sah ──
     const sesi = validateToken(token);
     if (!sesi.valid) {
@@ -204,6 +225,11 @@ function doPost(e) {
       case 'deleteKeunggulan':  return buildResponse(hapusKeunggulan(data.id));
       case 'saveTestimoni':     return buildResponse(simpanTestimoni(data));
       case 'deleteTestimoni':   return buildResponse(hapusTestimoni(data.id));
+      case 'saveGaleri':        return buildResponse(simpanGaleri(data));
+      case 'deleteGaleri':      return buildResponse(hapusGaleri(data.id));
+      case 'approvePengajuan':  return buildResponse(setujuiPengajuan(data.id, data));
+      case 'rejectPengajuan':   return buildResponse(tolakPengajuan(data.id));
+      case 'deletePengajuan':   return buildResponse(hapusPengajuan(data.id));
       case 'saveConfig':        return buildResponse(simpanKonfigurasi(data));
       case 'uploadMedia':       return buildResponse(uploadMedia(data.base64, data.fileName, data.mimeType, data.kategori));
       default:
@@ -331,6 +357,48 @@ function readSheetRaw(sheetName) {
     });
 }
 
+/**
+ * Baca sheet yang mungkin belum ada.
+ *
+ * Sheet Galeri dan Pengajuan baru diperkenalkan di v3. Instalasi lama belum
+ * memilikinya sampai upgradeKeV3() dijalankan — mengembalikan array kosong
+ * jauh lebih baik daripada melempar galat yang mematikan seluruh halaman.
+ */
+function bacaSheetOpsional(sheetName) {
+  try {
+    const sheet = getSpreadsheet().getSheetByName(sheetName);
+    if (!sheet) return [];
+    const values = sheet.getDataRange().getValues();
+    if (values.length <= 1) return [];
+
+    const headers = values[0];
+    return values.slice(1)
+      .filter(function (row) { return row.join('').trim() !== ''; })
+      .map(function (row) {
+        const obj = {};
+        headers.forEach(function (h, i) { obj[h] = cleanVal(row[i]); });
+        return obj;
+      });
+  } catch (e) {
+    return [];
+  }
+}
+
+/** Versi ber-cache dari bacaSheetOpsional — dipakai landing page. */
+function getCachedSheetOpsional(sheetName, ttl) {
+  const cache = CacheService.getScriptCache();
+  const key = 'ph_' + sheetName.toLowerCase();
+
+  try {
+    const hit = cache.get(key);
+    if (hit) return JSON.parse(hit);
+  } catch (e) { /* cache bermasalah — baca langsung */ }
+
+  const records = bacaSheetOpsional(sheetName);
+  try { cache.put(key, JSON.stringify(records), ttl || CACHE_TTL.MASTER); } catch (e) {}
+  return records;
+}
+
 /** Baca sheet dengan cache (Prinsip 3). */
 function getCachedSheet(sheetName, ttl) {
   const cache = CacheService.getScriptCache();
@@ -395,24 +463,35 @@ function getInitialData() {
     const testimoni = getCachedSheet(SHEETS.TESTIMONI, CACHE_TTL.MASTER)
       .filter(function (t) { return String(t.Status).toLowerCase() !== 'draft'; });
 
+    // Bukti nyata (tangkapan layar & video) — hanya yang sudah disetujui admin
+    const galeri = getCachedSheetOpsional(SHEETS.GALERI, CACHE_TTL.MASTER)
+      .filter(function (g) { return String(g.Status).toLowerCase() === 'published'; })
+      .sort(function (a, b) { return (Number(a.Urutan) || 999) - (Number(b.Urutan) || 999); })
+      .map(function (g) {
+        // Kolom internal (email/HP pengirim tidak pernah ada di sini, tapi
+        // Sumber pun tak perlu diketahui publik)
+        return { ID: g.ID, Tipe: g.Tipe, Url: g.Url, Judul: g.Judul };
+      });
+
     const config = {};
     getCachedSheet(SHEETS.CONFIG, CACHE_TTL.MASTER).forEach(function (r) {
       config[r.Key] = r.Value;
     });
 
-    // Jangan pernah kirim rahasia atau ID internal ke publik
+    // Jangan pernah kirim rahasia atau ID internal ke publik.
+    // Pola ini otomatis ikut menutup kunci *FolderId baru yang ditambahkan
+    // kemudian — lebih aman daripada daftar hapus manual yang mudah terlupa.
     delete config.adminPin;
-    delete config.folderId;
-    delete config.thumbnailFolderId;
-    delete config.heroFolderId;
-    delete config.testimoniFolderId;
-    delete config.spreadsheetId;
+    Object.keys(config).forEach(function (k) {
+      if (/(FolderId|folderId|spreadsheetId)$/.test(k)) delete config[k];
+    });
 
     return ok({
       produk: produk,
       hero: hero,
       keunggulan: keunggulan,
       testimoni: testimoni,
+      galeri: galeri,
       config: config
     }, 'OK');
 
@@ -512,6 +591,13 @@ function getAdminData() {
     const testimoni = readSheetRaw(SHEETS.TESTIMONI);
     const statistik = readSheetRaw(SHEETS.STATISTIK);
 
+    // Sheet baru sejak v3. Bila pengguna belum menjalankan upgradeKeV3(),
+    // dashboard tetap terbuka — dua modul baru saja yang tampil kosong.
+    const galeri    = bacaSheetOpsional(SHEETS.GALERI)
+      .sort(function (a, b) { return (Number(a.Urutan) || 999) - (Number(b.Urutan) || 999); });
+    const pengajuan = bacaSheetOpsional(SHEETS.PENGAJUAN)
+      .sort(function (a, b) { return String(b.Tanggal || '').localeCompare(String(a.Tanggal || '')); });
+
     const keunggulan = readSheetRaw(SHEETS.KEUNGGULAN)
       .sort(function (a, b) { return (Number(a.Urutan) || 999) - (Number(b.Urutan) || 999); });
 
@@ -524,8 +610,11 @@ function getAdminData() {
       hero: heroRows.length ? heroRows[0] : {},
       keunggulan: keunggulan,
       testimoni: testimoni,
+      galeri: galeri,
+      pengajuan: pengajuan,
       config: config,
-      statistik: hitungRekapStatistik(statistik, produk)
+      statistik: hitungRekapStatistik(statistik, produk),
+      siapV3: adaSheet(SHEETS.GALERI) && adaSheet(SHEETS.PENGAJUAN)
     }, 'OK');
 
   } catch (err) {
@@ -885,6 +974,328 @@ function hapusTestimoni(id) {
 }
 
 // ══════════════════════════════════════════════════════════
+// BAGIAN 11b: GALERI BUKTI (tangkapan layar & video YouTube)
+// ══════════════════════════════════════════════════════════
+
+/** Apakah sebuah sheet sudah ada? Dipakai untuk mendeteksi kesiapan v3. */
+function adaSheet(nama) {
+  try { return !!getSpreadsheet().getSheetByName(nama); }
+  catch (e) { return false; }
+}
+
+/**
+ * Tebak jenis media dari URL-nya.
+ * Admin cukup menempel satu URL — tidak perlu memilih tipe secara manual.
+ */
+function tipeMediaDariUrl(url) {
+  const s = String(url || '');
+  return /(?:youtube\.com|youtu\.be)/i.test(s) ? 'youtube' : 'image';
+}
+
+function simpanGaleri(record) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    if (!adaSheet(SHEETS.GALERI)) {
+      return fail('Sheet Galeri belum ada. Jalankan upgradeKeV3() di editor Apps Script.');
+    }
+    if (!String(record.Url || '').trim()) {
+      return fail('URL gambar atau video wajib diisi.');
+    }
+
+    // Tipe selalu ditentukan ulang dari URL supaya data tetap konsisten
+    record.Tipe = tipeMediaDariUrl(record.Url);
+
+    const sheet = getSheet(SHEETS.GALERI);
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    const idCol = headers.indexOf('ID');
+
+    if (record.ID) {
+      let rowIndex = -1;
+      for (let i = 1; i < values.length; i++) {
+        if (values[i][idCol] === record.ID) { rowIndex = i; break; }
+      }
+      if (rowIndex === -1) return fail('Bukti tidak ditemukan.');
+
+      const updated = headers.map(function (h, i) {
+        return record[h] !== undefined ? record[h] : values[rowIndex][i];
+      });
+      sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([updated]);
+    } else {
+      record.ID = generateUUID();
+      if (!record.Status) record.Status = 'Published';
+      if (!record.Sumber) record.Sumber = 'admin';
+      if (!record.Urutan) record.Urutan = values.length;
+      if (!record.Tanggal) record.Tanggal = todayKey();
+
+      const newRow = headers.map(function (h) { return record[h] !== undefined ? record[h] : ''; });
+      sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([newRow]);
+    }
+
+    invalidateCache(SHEETS.GALERI);
+    return ok(record, 'Bukti berhasil disimpan.');
+
+  } catch (err) {
+    return fail(err.message);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function hapusGaleri(id) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    const sheet = getSheet(SHEETS.GALERI);
+    const values = sheet.getDataRange().getValues();
+    const idCol = values[0].indexOf('ID');
+
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][idCol] === id) {
+        sheet.deleteRow(i + 1);
+        invalidateCache(SHEETS.GALERI);
+        return ok(null, 'Bukti berhasil dihapus.');
+      }
+    }
+    return fail('Bukti tidak ditemukan.');
+
+  } catch (err) {
+    return fail(err.message);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// BAGIAN 11c: PENGAJUAN MEMBER (form publik → verifikasi admin)
+// ══════════════════════════════════════════════════════════
+
+/** Potong teks panjang dan bersihkan spasi berlebih dari kiriman publik. */
+function rapikanTeks(v, batas) {
+  return String(v === null || v === undefined ? '' : v)
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, batas || BATAS_KIRIMAN.PANJANG_TEKS);
+}
+
+/**
+ * Terima kiriman testimoni dari member — TANPA token.
+ *
+ * Ini satu-satunya endpoint tulis yang terbuka untuk publik, jadi
+ * perlakuannya berbeda dari endpoint admin:
+ *   - hasilnya masuk antrean (Status "Baru"), tidak pernah langsung tayang
+ *   - hanya kolom yang kita kenali yang ditulis — payload liar diabaikan
+ *   - ukuran gambar dan panjang teks dibatasi
+ *   - ada jeda antar kiriman supaya tidak bisa dibanjiri secepat mesin
+ *
+ * Admin bisa mematikannya kapan saja lewat pengaturan formMemberEnabled.
+ */
+function terimaPengajuan(data) {
+  try {
+    if (!adaSheet(SHEETS.PENGAJUAN)) {
+      return fail('Form belum siap. Hubungi pemilik situs.');
+    }
+
+    const aktif = String(getConfigValue('formMemberEnabled') || '1');
+    if (aktif === '0' || aktif.toLowerCase() === 'false') {
+      return fail('Form testimoni sedang ditutup sementara.');
+    }
+
+    const d = data || {};
+    const nama      = rapikanTeks(d.nama, 80);
+    const testimoni = rapikanTeks(d.testimoni, BATAS_KIRIMAN.PANJANG_TEKS);
+
+    if (nama.length < 2)      return fail('Nama wajib diisi.');
+    if (testimoni.length < 10) return fail('Testimoni terlalu pendek — ceritakan sedikit lebih banyak.');
+
+    const email = rapikanTeks(d.email, 120);
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return fail('Format email tidak valid.');
+    }
+
+    // Jeda global sederhana. Apps Script tidak bisa melihat alamat IP
+    // pengunjung, jadi ini melambatkan pengiriman beruntun dari mana pun.
+    const cache = CacheService.getScriptCache();
+    if (cache.get('kiriman_terakhir')) {
+      return fail('Mohon tunggu sebentar sebelum mengirim lagi.');
+    }
+    cache.put('kiriman_terakhir', '1', Math.ceil(BATAS_KIRIMAN.JEDA_GLOBAL / 1000));
+
+    // ── Unggah gambar bila disertakan ──
+    let urlProfil = '';
+    let urlBukti  = '';
+
+    if (d.fotoProfil && d.fotoProfil.base64) {
+      const r = unggahGambar(d.fotoProfil, CONFIG.PROFIL_FOLDER_ID || CONFIG.TESTIMONI_FOLDER_ID);
+      if (!r.success) return r;
+      urlProfil = r.data.url;
+    }
+
+    if (d.fotoBukti && d.fotoBukti.base64) {
+      const r = unggahGambar(d.fotoBukti, CONFIG.BUKTI_FOLDER_ID || CONFIG.THUMBNAIL_FOLDER_ID);
+      if (!r.success) return r;
+      urlBukti = r.data.url;
+    }
+
+    const sheet = getSheet(SHEETS.PENGAJUAN);
+    const headers = sheet.getDataRange().getValues()[0];
+
+    const record = {
+      ID:          generateUUID(),
+      Nama:        nama,
+      Jabatan:     rapikanTeks(d.jabatan, 80),
+      Email:       email,
+      NoHP:        rapikanTeks(d.noHp, 30),
+      Testimoni:   testimoni,
+      Saran:       rapikanTeks(d.saran, BATAS_KIRIMAN.PANJANG_TEKS),
+      FotoProfil:  urlProfil,
+      FotoBukti:   urlBukti,
+      Status:      'Baru',
+      Tanggal:     todayKey(),
+      CatatanAdmin: ''
+    };
+
+    const newRow = headers.map(function (h) { return record[h] !== undefined ? record[h] : ''; });
+    sheet.getRange(sheet.getLastRow() + 1, 1, 1, headers.length).setValues([newRow]);
+
+    invalidateCache(SHEETS.PENGAJUAN);
+
+    return ok({ diterima: true },
+      'Terima kasih! Testimoni Anda sudah kami terima dan akan tayang setelah diperiksa admin.');
+
+  } catch (err) {
+    return fail(err.message);
+  }
+}
+
+/**
+ * Setujui satu pengajuan.
+ *
+ * Satu tombol menghasilkan dua hal sekaligus, sesuai janji ke pengunjung:
+ * testimoninya masuk ke section Testimoni, dan bukti gambarnya masuk ke
+ * section Bukti Nyata. Email dan nomor HP pengirim tetap tinggal di sheet
+ * Pengajuan — tidak pernah ikut tayang.
+ */
+function setujuiPengajuan(id, opsi) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(15000);
+
+    const sheet = getSheet(SHEETS.PENGAJUAN);
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    const idCol = headers.indexOf('ID');
+
+    let rowIndex = -1;
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][idCol] === id) { rowIndex = i; break; }
+    }
+    if (rowIndex === -1) return fail('Pengajuan tidak ditemukan.');
+
+    const row = {};
+    headers.forEach(function (h, i) { row[h] = cleanVal(values[rowIndex][i]); });
+
+    const o = opsi || {};
+    // Admin boleh merapikan teks sebelum menayangkan
+    const namaFinal  = rapikanTeks(o.Nama || row.Nama, 80);
+    const isiFinal   = rapikanTeks(o.Isi || row.Testimoni, BATAS_KIRIMAN.PANJANG_TEKS);
+    const jabatanFin = rapikanTeks(o.Jabatan !== undefined ? o.Jabatan : row.Jabatan, 80);
+
+    // 1. Testimoni tayang
+    const hasilTesti = simpanTestimoni({
+      Nama: namaFinal,
+      Jabatan: jabatanFin,
+      Isi: isiFinal,
+      Foto: row.FotoProfil || '',
+      Status: 'Published'
+    });
+    if (!hasilTesti.success) return hasilTesti;
+
+    // 2. Bukti gambar masuk galeri (kalau memang ada)
+    if (row.FotoBukti && adaSheet(SHEETS.GALERI)) {
+      simpanGaleri({
+        Tipe: 'image',
+        Url: row.FotoBukti,
+        Judul: 'Bukti dari ' + namaFinal,
+        Sumber: 'member',
+        Status: 'Published'
+      });
+    }
+
+    // 3. Tandai pengajuan sudah diproses
+    const stCol = headers.indexOf('Status');
+    const cnCol = headers.indexOf('CatatanAdmin');
+    values[rowIndex][stCol] = 'Disetujui';
+    if (cnCol !== -1) values[rowIndex][cnCol] = 'Tayang pada ' + todayKey();
+    sheet.getRange(rowIndex + 1, 1, 1, headers.length).setValues([values[rowIndex]]);
+
+    invalidateCache(SHEETS.PENGAJUAN);
+    return ok(null, 'Pengajuan disetujui — testimoni dan buktinya sudah tayang.');
+
+  } catch (err) {
+    return fail(err.message);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function tolakPengajuan(id) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    const sheet = getSheet(SHEETS.PENGAJUAN);
+    const values = sheet.getDataRange().getValues();
+    const headers = values[0];
+    const idCol = headers.indexOf('ID');
+    const stCol = headers.indexOf('Status');
+
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][idCol] === id) {
+        values[i][stCol] = 'Ditolak';
+        sheet.getRange(i + 1, 1, 1, headers.length).setValues([values[i]]);
+        invalidateCache(SHEETS.PENGAJUAN);
+        return ok(null, 'Pengajuan ditolak. Datanya tetap tersimpan sebagai arsip.');
+      }
+    }
+    return fail('Pengajuan tidak ditemukan.');
+
+  } catch (err) {
+    return fail(err.message);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+function hapusPengajuan(id) {
+  const lock = LockService.getScriptLock();
+  try {
+    lock.waitLock(10000);
+
+    const sheet = getSheet(SHEETS.PENGAJUAN);
+    const values = sheet.getDataRange().getValues();
+    const idCol = values[0].indexOf('ID');
+
+    for (let i = 1; i < values.length; i++) {
+      if (values[i][idCol] === id) {
+        sheet.deleteRow(i + 1);
+        invalidateCache(SHEETS.PENGAJUAN);
+        return ok(null, 'Pengajuan dihapus.');
+      }
+    }
+    return fail('Pengajuan tidak ditemukan.');
+
+  } catch (err) {
+    return fail(err.message);
+  } finally {
+    try { lock.releaseLock(); } catch (e) {}
+  }
+}
+
+// ══════════════════════════════════════════════════════════
 // BAGIAN 12: PENGATURAN (AppConfig)
 // ══════════════════════════════════════════════════════════
 
@@ -954,24 +1365,49 @@ function simpanKonfigurasi(configObj) {
  * @param {string} kategori 'thumbnail' | 'hero' | 'testimoni'
  */
 function uploadMedia(base64, fileName, mimeType, kategori) {
+  const folderKey = {
+    thumbnail: 'thumbnailFolderId',
+    hero:      'heroFolderId',
+    testimoni: 'testimoniFolderId',
+    galeri:    'galeriFolderId',
+    profil:    'profilFolderId',
+    bukti:     'buktiFolderId'
+  }[String(kategori).toLowerCase()] || 'thumbnailFolderId';
+
+  // Folder v3 mungkin belum ada pada instalasi lama — jatuhkan ke folder
+  // lama yang pasti ada, supaya unggahan tidak gagal total.
+  const folderId = prop(folderKey) || prop('thumbnailFolderId');
+
+  return unggahGambar({ base64: base64, fileName: fileName, mimeType: mimeType }, folderId);
+}
+
+/**
+ * Inti proses unggah — dipakai admin (uploadMedia) maupun form publik
+ * (terimaPengajuan). Menyatukannya berarti aturan keamanan yang sama
+ * berlaku untuk keduanya: hanya gambar, dan ada batas ukuran.
+ */
+function unggahGambar(berkas, folderId) {
   try {
-    if (!base64) return fail('File kosong.');
-    if (String(mimeType).indexOf('image/') !== 0) {
+    const b = berkas || {};
+    if (!b.base64) return fail('File kosong.');
+
+    if (String(b.mimeType || '').indexOf('image/') !== 0) {
       return fail('Hanya berkas gambar (PNG/JPG/GIF/WebP) yang diizinkan.');
     }
 
-    const folderKey = {
-      thumbnail: 'thumbnailFolderId',
-      hero:      'heroFolderId',
-      testimoni: 'testimoniFolderId'
-    }[String(kategori).toLowerCase()] || 'thumbnailFolderId';
+    // Panjang base64 ≈ 4/3 ukuran asli
+    const perkiraanByte = String(b.base64).length * 0.75;
+    if (perkiraanByte > BATAS_KIRIMAN.UKURAN_GAMBAR) {
+      return fail('Ukuran gambar melebihi ' +
+        Math.round(BATAS_KIRIMAN.UKURAN_GAMBAR / 1024 / 1024) + ' MB. Kompres dulu, lalu coba lagi.');
+    }
 
-    const folderId = prop(folderKey);
     if (!folderId) {
       throw new Error('Folder media belum dikonfigurasi. Jalankan setupAppEnvironment().');
     }
 
-    const blob = Utilities.newBlob(Utilities.base64Decode(base64), mimeType, fileName || 'gambar');
+    const blob = Utilities.newBlob(
+      Utilities.base64Decode(b.base64), b.mimeType, b.fileName || 'gambar');
     const file = DriveApp.getFolderById(folderId).createFile(blob);
 
     // Agar gambar bisa tampil di landing page publik
@@ -1012,6 +1448,9 @@ function setupAppEnvironment() {
     const subThumbnail = getOrCreateSubFolder(mainFolder, 'Thumbnail');
     const subHero      = getOrCreateSubFolder(mainFolder, 'Hero');
     const subTestimoni = getOrCreateSubFolder(mainFolder, 'Testimoni');
+    const subGaleri    = getOrCreateSubFolder(mainFolder, 'Galeri');
+    const subProfil    = getOrCreateSubFolder(mainFolder, 'ProfilMember');
+    const subBukti     = getOrCreateSubFolder(mainFolder, 'BuktiMember');
 
     // ── 2. Spreadsheet database ──
     let ss;
@@ -1026,9 +1465,11 @@ function setupAppEnvironment() {
     const now = todayKey();
 
     // ── 3. Sheet: Produk ──
+    // Kolom Galeri = daftar URL (satu per baris) untuk popup detail produk.
+    // Boleh berisi URL gambar maupun URL YouTube — jenisnya dideteksi otomatis.
     createSheetIfNotExists(ss, SHEETS.PRODUK,
       ['ID', 'NamaProduk', 'Harga', 'Deskripsi', 'LinkProduk', 'LinkDemo',
-       'Thumbnail', 'TanggalUpload', 'Status', 'LinkCheckout', 'Badge', 'Urutan'],
+       'Thumbnail', 'TanggalUpload', 'Status', 'LinkCheckout', 'Badge', 'Urutan', 'Galeri'],
       [generateUUID(), 'SaaS Boilerplate Pro', 149000,
        'Fondasi aplikasi siap pakai berbasis Google Apps Script — lengkap dengan autentikasi, CRUD, dan dashboard.',
        '', 'https://script.google.com/', '', now, 'Published',
@@ -1081,6 +1522,17 @@ function setupAppEnvironment() {
        '', 'Published']
     );
 
+    // ── 6b. Sheet: Galeri (bukti nyata — gambar & video) ──
+    createSheetIfNotExists(ss, SHEETS.GALERI,
+      ['ID', 'Tipe', 'Url', 'Judul', 'Sumber', 'Status', 'Urutan', 'Tanggal']
+    );
+
+    // ── 6c. Sheet: Pengajuan (kiriman member, menunggu verifikasi) ──
+    createSheetIfNotExists(ss, SHEETS.PENGAJUAN,
+      ['ID', 'Nama', 'Jabatan', 'Email', 'NoHP', 'Testimoni', 'Saran',
+       'FotoProfil', 'FotoBukti', 'Status', 'Tanggal', 'CatatanAdmin']
+    );
+
     // ── 7. Sheet: Statistik (1 baris per hari) ──
     createSheetIfNotExists(ss, SHEETS.STATISTIK,
       ['Tanggal', 'TotalPengunjung', 'TotalKlikCTA', 'TotalKlikDemo', 'DetailProduk'],
@@ -1109,7 +1561,17 @@ function setupAppEnvironment() {
       // Kecepatan animasi (detik untuk satu putaran penuh)
       ['heroSlideDelay', '5'],
       ['demoSpeed', '40'],
-      ['testiSpeed', '55']
+      ['testiSpeed', '55'],
+      ['galeriSpeed', '45'],
+
+      // Animasi angka social proof (hitung naik)
+      ['statCountEnabled', '1'],
+      ['statCountDuration', '2000'],
+
+      // Section Bukti Nyata & form kiriman member
+      ['galeriJudul', 'Bukti Nyata dari Pengguna'],
+      ['galeriSubjudul', 'Tangkapan layar dan video asli dari mereka yang sudah memakainya.'],
+      ['formMemberEnabled', '1']
     );
 
     // ── 9. Simpan ID ke Script Properties (akses tercepat) ──
@@ -1118,7 +1580,10 @@ function setupAppEnvironment() {
       folderId: mainFolder.getId(),
       thumbnailFolderId: subThumbnail.getId(),
       heroFolderId: subHero.getId(),
-      testimoniFolderId: subTestimoni.getId()
+      testimoniFolderId: subTestimoni.getId(),
+      galeriFolderId: subGaleri.getId(),
+      profilFolderId: subProfil.getId(),
+      buktiFolderId: subBukti.getId()
     });
 
     // ── 10. Hapus Sheet1 bawaan ──
@@ -1147,6 +1612,133 @@ function setupAppEnvironment() {
 
   } catch (err) {
     Logger.log('❌ Setup gagal: ' + err.message);
+    return fail(err.message);
+  }
+}
+
+/**
+ * ★ MIGRASI KE v3 — jalankan SEKALI bila aplikasi Anda sudah pernah di-setup.
+ *
+ * setupAppEnvironment() sengaja tidak menyentuh sheet yang sudah ada supaya
+ * data Anda aman. Konsekuensinya, sheet dan kolom baru dari v3 tidak akan
+ * muncul dengan sendirinya pada instalasi lama. Fungsi inilah yang
+ * menambahkannya — tanpa menghapus atau menimpa satu baris pun data lama.
+ *
+ * Yang ditambahkan:
+ *   1. Folder Drive: Galeri, ProfilMember, BuktiMember
+ *   2. Sheet baru  : Galeri, Pengajuan
+ *   3. Kolom baru  : Produk → Galeri
+ *   4. Pengaturan  : galeriSpeed, statCountEnabled, statCountDuration,
+ *                    galeriJudul, galeriSubjudul, formMemberEnabled
+ *
+ * Aman dijalankan berkali-kali.
+ */
+function upgradeKeV3() {
+  try {
+    Logger.log('🔧 Memulai migrasi ke v3…');
+    const laporan = [];
+
+    // ── 1. Folder media baru ──
+    const folders = DriveApp.getFoldersByName(FOLDER_NAME);
+    if (!folders.hasNext()) {
+      throw new Error('Folder aplikasi belum ada. Jalankan setupAppEnvironment() lebih dulu.');
+    }
+    const mainFolder = folders.next();
+
+    const subGaleri = getOrCreateSubFolder(mainFolder, 'Galeri');
+    const subProfil = getOrCreateSubFolder(mainFolder, 'ProfilMember');
+    const subBukti  = getOrCreateSubFolder(mainFolder, 'BuktiMember');
+
+    PropertiesService.getScriptProperties().setProperties({
+      galeriFolderId: subGaleri.getId(),
+      profilFolderId: subProfil.getId(),
+      buktiFolderId:  subBukti.getId()
+    });
+    laporan.push('Folder Galeri / ProfilMember / BuktiMember siap.');
+
+    const ss = getSpreadsheet();
+
+    // ── 2. Sheet baru ──
+    if (!ss.getSheetByName(SHEETS.GALERI)) {
+      createSheetIfNotExists(ss, SHEETS.GALERI,
+        ['ID', 'Tipe', 'Url', 'Judul', 'Sumber', 'Status', 'Urutan', 'Tanggal']);
+      laporan.push('Sheet "Galeri" dibuat.');
+    } else {
+      laporan.push('Sheet "Galeri" sudah ada — dilewati.');
+    }
+
+    if (!ss.getSheetByName(SHEETS.PENGAJUAN)) {
+      createSheetIfNotExists(ss, SHEETS.PENGAJUAN,
+        ['ID', 'Nama', 'Jabatan', 'Email', 'NoHP', 'Testimoni', 'Saran',
+         'FotoProfil', 'FotoBukti', 'Status', 'Tanggal', 'CatatanAdmin']);
+      laporan.push('Sheet "Pengajuan" dibuat.');
+    } else {
+      laporan.push('Sheet "Pengajuan" sudah ada — dilewati.');
+    }
+
+    // ── 3. Kolom Galeri pada sheet Produk ──
+    const sheetProduk = ss.getSheetByName(SHEETS.PRODUK);
+    if (sheetProduk) {
+      const headers = sheetProduk.getRange(1, 1, 1, sheetProduk.getLastColumn()).getValues()[0];
+      if (headers.indexOf('Galeri') === -1) {
+        const kolomBaru = headers.length + 1;
+        sheetProduk.getRange(1, kolomBaru)
+          .setValue('Galeri')
+          .setFontWeight('bold')
+          .setBackground('#111111')
+          .setFontColor('#ffffff');
+        laporan.push('Kolom "Galeri" ditambahkan ke sheet Produk.');
+      } else {
+        laporan.push('Kolom "Galeri" sudah ada di sheet Produk — dilewati.');
+      }
+    }
+
+    // ── 4. Pengaturan baru (hanya yang belum ada) ──
+    const bawaanBaru = {
+      galeriSpeed:       '45',
+      statCountEnabled:  '1',
+      statCountDuration: '2000',
+      galeriJudul:       'Bukti Nyata dari Pengguna',
+      galeriSubjudul:    'Tangkapan layar dan video asli dari mereka yang sudah memakainya.',
+      formMemberEnabled: '1',
+      galeriFolderId:    subGaleri.getId(),
+      profilFolderId:    subProfil.getId(),
+      buktiFolderId:     subBukti.getId()
+    };
+
+    const sheetConfig = ss.getSheetByName(SHEETS.CONFIG);
+    const nilaiConfig = sheetConfig.getDataRange().getValues();
+    const sudahAda = {};
+    for (let i = 1; i < nilaiConfig.length; i++) sudahAda[nilaiConfig[i][0]] = true;
+
+    const tambahan = [];
+    Object.keys(bawaanBaru).forEach(function (k) {
+      if (!sudahAda[k]) tambahan.push([k, bawaanBaru[k]]);
+    });
+
+    if (tambahan.length) {
+      sheetConfig.getRange(sheetConfig.getLastRow() + 1, 1, tambahan.length, 2).setValues(tambahan);
+      laporan.push(tambahan.length + ' pengaturan baru ditambahkan.');
+    } else {
+      laporan.push('Semua pengaturan baru sudah ada — dilewati.');
+    }
+
+    // ── 5. Bersihkan cache supaya perubahan langsung terbaca ──
+    invalidateAllCache();
+
+    Logger.log('');
+    Logger.log('✅ MIGRASI v3 SELESAI');
+    laporan.forEach(function (b) { Logger.log('   • ' + b); });
+    Logger.log('');
+    Logger.log('➡️  Langkah berikutnya:');
+    Logger.log('   1. Deploy → Manage deployments → Edit → Version: New version → Deploy');
+    Logger.log('   2. Push berkas frontend terbaru ke GitHub');
+    Logger.log('   3. Buka dashboard: menu "Bukti Nyata" dan "Pengajuan" sudah aktif');
+
+    return ok({ laporan: laporan }, 'Migrasi v3 berhasil.');
+
+  } catch (err) {
+    Logger.log('❌ Migrasi gagal: ' + err.message);
     return fail(err.message);
   }
 }
@@ -1196,6 +1788,7 @@ function warmupCache() {
       try { getCachedSheet(s, CACHE_TTL.MASTER); }
       catch (e) { Logger.log('Warmup ' + s + ': ' + e.message); }
     });
+  getCachedSheetOpsional(SHEETS.GALERI, CACHE_TTL.MASTER);
   Logger.log('🔥 Cache siap.');
 }
 
@@ -1229,8 +1822,13 @@ function ujiAPI() {
     Logger.log('produk     : ' + init.data.produk.length);
     Logger.log('keunggulan : ' + init.data.keunggulan.length);
     Logger.log('testimoni  : ' + init.data.testimoni.length);
+    Logger.log('galeri     : ' + (init.data.galeri || []).length + ' bukti tayang');
     Logger.log('config     : ' + Object.keys(init.data.config).length + ' kunci');
     Logger.log('adminPin bocor? ' + (init.data.config.adminPin !== undefined ? '❌ YA' : '✅ tidak'));
+    const bocorFolder = Object.keys(init.data.config).filter(function (k) {
+      return /FolderId|spreadsheetId/.test(k);
+    });
+    Logger.log('ID folder bocor? ' + (bocorFolder.length ? '❌ ' + bocorFolder.join(', ') : '✅ tidak'));
   } else {
     Logger.log('pesan: ' + init.message);
   }
@@ -1250,12 +1848,29 @@ function ujiAPI() {
     Logger.log('success: ' + admin.success + ' | produk: ' +
       (admin.success ? admin.data.produk.length : admin.message));
 
+    if (admin.success) {
+      Logger.log('galeri     : ' + (admin.data.galeri || []).length + ' bukti');
+      Logger.log('pengajuan  : ' + (admin.data.pengajuan || []).length + ' kiriman');
+      Logger.log('siap v3?     ' + (admin.data.siapV3
+        ? '✅ ya'
+        : '❌ BELUM — jalankan upgradeKeV3() sekali'));
+    }
+
     Logger.log('── getAdminData (token palsu) ──');
     const tolak = JSON.parse(doPost({
       postData: { contents: JSON.stringify({ action: 'getAdminData', token: 'token-palsu' }) }
     }).getContent());
     Logger.log('ditolak? ' + (tolak.success ? '❌ TIDAK' : '✅ ya — ' + tolak.message));
   }
+
+  // Endpoint publik: dipanggil TANPA token. Sengaja dikirim data kosong
+  // supaya yang diuji adalah validasinya — tidak ada baris sampah yang lahir.
+  Logger.log('── submitTestimoni (validasi, tanpa token) ──');
+  const kosong = JSON.parse(doPost({
+    postData: { contents: JSON.stringify({ action: 'submitTestimoni', data: { nama: '' } }) }
+  }).getContent());
+  Logger.log('kiriman kosong ditolak? ' +
+    (kosong.success ? '❌ TIDAK' : '✅ ya — ' + kosong.message));
 
   Logger.log('');
   Logger.log('✅ Uji selesai.');

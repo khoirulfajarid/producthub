@@ -33,6 +33,7 @@ document.addEventListener('DOMContentLoaded', function () {
   hydrateIcons();
   muatTemaTersimpan();
   pasangPenutupModal();
+  pasangPenggantiGambar();
 
   // Bangun ulang grafik saat tema berganti agar warnanya menyesuaikan
   onThemeChange = refreshChartsTheme;
@@ -128,6 +129,8 @@ const JUDUL_SECTION = {
   hero:       'Konten Hero',
   keunggulan: 'Keunggulan',
   testimoni:  'Testimoni',
+  galeri:     'Bukti Nyata',
+  pengajuan:  'Pengajuan Member',
   laporan:    'Laporan & Analytics',
   pengaturan: 'Pengaturan'
 };
@@ -188,9 +191,24 @@ async function muatDataAdmin() {
   renderProdukTable();
   renderKeunggulanList();
   renderTestimoniTable();
+  renderGaleriAdmin();
+  renderPengajuan();
   isiFormHero();
   isiFormKonfigurasi();
   renderLaporan();
+  ingatkanMigrasi();
+}
+
+/**
+ * Dua modul baru bergantung pada sheet yang hanya ada setelah migrasi.
+ * Daripada membiarkan admin bingung melihat menu kosong, katakan
+ * langsung apa yang perlu dijalankan.
+ */
+function ingatkanMigrasi() {
+  if (AdminState.data.siapV3 !== false) return;
+  showToast('Database perlu diperbarui',
+    'Jalankan fungsi upgradeKeV3() sekali di editor Apps Script agar modul ' +
+    'Bukti Nyata dan Pengajuan bisa dipakai.', 'warning');
 }
 
 function renderDashboard() {
@@ -244,6 +262,13 @@ function badgeStatus(status) {
   const s = String(status || '').toLowerCase();
   if (s === 'published') return '<span class="badge-chip badge-success">Published</span>';
   if (s === 'draft')     return '<span class="badge-chip badge-warning">Draft</span>';
+
+  // Status antrean pengajuan — "Baru" sengaja memakai warna aksen supaya
+  // yang menunggu tindakan langsung menarik mata admin.
+  if (s === 'baru')      return '<span class="badge-chip badge-accent">Perlu Diperiksa</span>';
+  if (s === 'disetujui') return '<span class="badge-chip badge-success">Disetujui</span>';
+  if (s === 'ditolak')   return '<span class="badge-chip badge-neutral">Ditolak</span>';
+
   return '<span class="badge-chip badge-neutral">' + esc(status || '-') + '</span>';
 }
 
@@ -323,6 +348,8 @@ function openProdukModal(id) {
   const form = document.getElementById('produkForm');
   form.reset();
   document.getElementById('prodThumb').value = '';
+  document.getElementById('prodGaleri').value = '';
+  document.getElementById('prodYoutubeUrl').value = '';
   document.getElementById('prodPreview').classList.add('hidden');
 
   if (id && AdminState.data) {
@@ -340,6 +367,7 @@ function openProdukModal(id) {
       document.getElementById('prodUrutan').value   = p.Urutan || '';
       document.getElementById('prodLink').value     = p.LinkProduk || '';
       document.getElementById('prodThumb').value    = p.Thumbnail || '';
+      document.getElementById('prodGaleri').value   = p.Galeri || '';
       if (safeUrl(p.Thumbnail)) {
         const img = document.getElementById('prodPreview');
         img.src = p.Thumbnail;
@@ -907,12 +935,27 @@ function isiFormKonfigurasi() {
     cfgLabel2: 'statLabel2', cfgValue2: 'statValue2',
     cfgLabel3: 'statLabel3', cfgValue3: 'statValue3',
     cfgLabel4: 'statLabel4', cfgValue4: 'statValue4',
-    cfgDemoSpeed: 'demoSpeed', cfgTestiSpeed: 'testiSpeed'
+    cfgDemoSpeed: 'demoSpeed', cfgTestiSpeed: 'testiSpeed',
+    cfgGaleriSpeed: 'galeriSpeed',
+    cfgStatDurasi: 'statCountDuration',
+    cfgGaleriJudul: 'galeriJudul', cfgGaleriSub: 'galeriSubjudul'
   };
   Object.keys(map).forEach(function (id) {
     const el = document.getElementById(id);
     if (el) el.value = c[map[id]] || '';
   });
+
+  // Saklar aktif/nonaktif: nilai kosong berarti belum pernah diatur,
+  // dan bawaannya adalah aktif — sama seperti yang dipakai landing page.
+  isiSaklar('cfgStatCount', c.statCountEnabled);
+  isiSaklar('cfgFormMember', c.formMemberEnabled);
+}
+
+function isiSaklar(elId, nilai) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const mati = String(nilai) === '0' || String(nilai).toLowerCase() === 'false';
+  el.value = mati ? '0' : '1';
 }
 
 async function submitConfig(e) {
@@ -1034,4 +1077,325 @@ function uploadImage(input, kategori, hiddenId, previewId) {
   };
   reader.onerror = function () { showToast('Error', 'Berkas gagal dibaca.', 'danger'); };
   reader.readAsDataURL(file);
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 14: GALERI PRODUK (di dalam modal produk)
+// ════════════════════════════════════════════════════════════
+
+/** Tambahkan satu URL ke kotak galeri produk tanpa menimpa isi yang sudah ada. */
+function tambahBarisGaleri(url) {
+  const kotak = document.getElementById('prodGaleri');
+  const baris = kotak.value.split('\n').map(function (s) { return s.trim(); })
+    .filter(function (s) { return s; });
+
+  if (baris.indexOf(url) !== -1) {
+    showToast('Sudah ada', 'URL itu sudah ada di daftar galeri.', 'warning');
+    return false;
+  }
+
+  baris.push(url);
+  kotak.value = baris.join('\n');
+  return true;
+}
+
+/** Unggah beberapa gambar sekaligus, lalu tempelkan URL-nya ke daftar. */
+function unggahGaleriProduk(input) {
+  const antre = Array.prototype.slice.call(input.files || []);
+  input.value = '';
+  if (!antre.length) return;
+
+  showToast('Mengunggah…', antre.length + ' gambar sedang diproses.', 'info');
+
+  antre.forEach(async function (file) {
+    if (file.size > APP_CONFIG.MAX_UPLOAD_BYTES) {
+      showToast('Dilewati', file.name + ' lebih dari 5 MB.', 'warning');
+      return;
+    }
+    if (file.type.indexOf('image/') !== 0) {
+      showToast('Dilewati', file.name + ' bukan berkas gambar.', 'warning');
+      return;
+    }
+
+    try {
+      const hasil = await bacaFileBase64(file);
+      const res = await Api.uploadMedia(hasil.base64, file.name, file.type, 'galeri');
+
+      if (!res.success) { showToast('Gagal unggah', res.message, 'danger'); return; }
+
+      tambahBarisGaleri(res.data.url);
+      showToast('Berhasil', file.name + ' ditambahkan ke galeri.', 'success');
+
+    } catch (err) {
+      showToast('Error', file.name + ' gagal dibaca.', 'danger');
+    }
+  });
+}
+
+/** Tambahkan tautan YouTube sebagai slide video pada galeri produk. */
+function tambahVideoProduk() {
+  const input = document.getElementById('prodYoutubeUrl');
+  const url = input.value.trim();
+
+  if (!url) {
+    showToast('Kosong', 'Tempel dulu tautan YouTube-nya.', 'warning');
+    return;
+  }
+  if (!youtubeId(url)) {
+    showToast('Bukan tautan YouTube',
+      'Gunakan tautan seperti https://youtube.com/watch?v=… atau https://youtu.be/…', 'warning');
+    return;
+  }
+
+  if (tambahBarisGaleri(url)) {
+    input.value = '';
+    showToast('Ditambahkan', 'Video masuk ke galeri produk.', 'success');
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 15: BUKTI NYATA (GALERI)
+// ════════════════════════════════════════════════════════════
+
+function renderGaleriAdmin() {
+  const list = AdminState.data.galeri || [];
+  const grid = document.getElementById('galeriGrid');
+  const kosong = document.getElementById('galeriKosong');
+
+  kosong.classList.toggle('hidden', list.length > 0);
+
+  if (!list.length) { grid.innerHTML = ''; return; }
+
+  grid.innerHTML = list.map(function (g) {
+    const id = esc(g.ID);
+    const url = safeUrl(g.Url);
+    const vid = youtubeId(url);
+    const gambar = vid ? youtubeThumb(vid) : url;
+    const judul = g.Judul || (vid ? 'Video' : 'Tangkapan layar');
+
+    return '<div class="galeri-item">' +
+      (gambar
+        ? '<img src="' + esc(gambar) + '" alt="' + esc(judul) + '" loading="lazy" ' +
+          'onclick="bukaPratinjau(\'' + esc(url) + '\',\'' + esc(judul) + '\')" style="cursor:zoom-in">'
+        : '') +
+      '<div class="isi">' +
+        '<div class="judul">' + esc(judul) + '</div>' +
+        '<div class="row-gap" style="gap:6px;flex-wrap:wrap">' +
+          badgeStatus(g.Status) +
+          '<span class="badge-chip badge-neutral">' + (vid ? 'Video' : 'Gambar') + '</span>' +
+          (String(g.Sumber) === 'member'
+            ? '<span class="badge-chip badge-accent">Dari member</span>' : '') +
+        '</div>' +
+        '<div class="aksi">' +
+          '<button class="btn-icon" onclick="openGaleriModal(\'' + id + '\')" aria-label="Edit">' +
+            icon('edit', 16) + '</button>' +
+          '<button class="btn-icon" onclick="hapusGaleriKonfirmasi(\'' + id + '\')" aria-label="Hapus">' +
+            icon('trash', 16) + '</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+}
+
+function openGaleriModal(id) {
+  const form = document.getElementById('galeriForm');
+  form.reset();
+  document.getElementById('galPreview').classList.add('hidden');
+
+  if (id && AdminState.data) {
+    const g = (AdminState.data.galeri || []).filter(function (x) { return x.ID === id; })[0];
+    if (g) {
+      document.getElementById('galeriModalTitle').textContent = 'Edit Bukti';
+      document.getElementById('galId').value     = g.ID;
+      document.getElementById('galUrl').value    = g.Url || '';
+      document.getElementById('galJudul').value  = g.Judul || '';
+      document.getElementById('galStatus').value = g.Status || 'Published';
+      document.getElementById('galUrutan').value = g.Urutan || '';
+
+      // Video tidak perlu pratinjau <img> — sampulnya sudah terlihat di grid
+      if (safeUrl(g.Url) && !youtubeId(g.Url)) {
+        const img = document.getElementById('galPreview');
+        img.src = g.Url;
+        img.classList.remove('hidden');
+      }
+    }
+  } else {
+    document.getElementById('galeriModalTitle').textContent = 'Tambah Bukti';
+    document.getElementById('galId').value = '';
+  }
+
+  openModal('modalGaleri');
+}
+
+async function submitGaleri(e) {
+  e.preventDefault();
+  const form = e.target;
+  if (!form.checkValidity()) { form.reportValidity(); return; }
+
+  const record = {};
+  new FormData(form).forEach(function (v, k) { record[k] = v; });
+  if (!record.ID) delete record.ID;
+
+  const pulih = setBtnLoading(document.getElementById('galeriSubmitBtn'));
+  const res = await Api.simpanGaleri(record);
+  pulih();
+
+  showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+  if (res.success) { closeModal('modalGaleri'); muatDataAdmin(); }
+}
+
+function hapusGaleriKonfirmasi(id) {
+  konfirmasi('Hapus bukti ini dari galeri? Gambarnya tetap tersimpan di Google Drive.',
+    async function () {
+      const res = await Api.hapusGaleri(id);
+      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+      if (res.success) muatDataAdmin();
+    });
+}
+
+/** Perbesar gambar (atau buka video) dari dalam dashboard. */
+function bukaPratinjau(url, judul) {
+  const isi = document.getElementById('pratinjauIsi');
+  const vid = youtubeId(url);
+
+  isi.innerHTML = vid
+    ? '<div class="rasio-video"><iframe src="' + esc(youtubeEmbed(vid, true)) + '" ' +
+      'title="Pratinjau video" frameborder="0" allowfullscreen ' +
+      'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture">' +
+      '</iframe></div>'
+    : '<img src="' + esc(url) + '" alt="' + esc(judul || 'Pratinjau') + '">';
+
+  document.getElementById('pratinjauCap').textContent = judul || '';
+  openModal('modalPratinjau');
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 16: ANTREAN PENGAJUAN MEMBER
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Kotak masuk kiriman member.
+ *
+ * Yang paling penting di sini adalah admin bisa memutuskan dengan cepat:
+ * foto, testimoni, dan gambar buktinya tampil sekaligus dalam satu kartu,
+ * sehingga tidak perlu membuka Google Sheets untuk memeriksa.
+ */
+function renderPengajuan() {
+  const semua = AdminState.data.pengajuan || [];
+  const filter = document.getElementById('filterPengajuan').value;
+  const wrap = document.getElementById('pengajuanList');
+
+  // Penanda di sidebar selalu menghitung yang benar-benar perlu tindakan
+  const jumlahBaru = semua.filter(function (p) { return String(p.Status) === 'Baru'; }).length;
+  const badge = document.getElementById('badgePengajuan');
+  badge.textContent = jumlahBaru;
+  badge.classList.toggle('hidden', jumlahBaru === 0);
+
+  const list = filter
+    ? semua.filter(function (p) { return String(p.Status) === filter; })
+    : semua;
+
+  if (!list.length) {
+    wrap.innerHTML = '<div class="card empty-state">' +
+      '<div class="h-md">Tidak ada kiriman di kategori ini</div>' +
+      '<p class="body-sm">Bagikan tautan <code>index.html#kirim</code> ke member Anda ' +
+      'supaya mereka bisa mengirim testimoni beserta buktinya sendiri.</p></div>';
+    return;
+  }
+
+  wrap.innerHTML = list.map(kartuPengajuan).join('');
+}
+
+function kartuPengajuan(p) {
+  const id = esc(p.ID);
+  const foto = safeUrl(p.FotoProfil);
+  const bukti = safeUrl(p.FotoBukti);
+  const baru = String(p.Status) === 'Baru';
+
+  return '<div class="pengajuan-card' + (baru ? ' baru' : '') + '">' +
+    '<div>' +
+      (foto
+        ? '<img class="pengajuan-foto" src="' + esc(foto) + '" alt="' + esc(p.Nama) + '" ' +
+          'onclick="bukaPratinjau(\'' + esc(foto) + '\',\'Foto profil ' + esc(p.Nama) + '\')" ' +
+          'style="cursor:zoom-in">'
+        : '<div class="pengajuan-foto-kosong">' + esc(inisial(p.Nama)) + '</div>') +
+    '</div>' +
+
+    '<div class="stack-sm">' +
+      '<div class="row-between" style="align-items:flex-start;gap:12px">' +
+        '<div>' +
+          '<div style="font-weight:600;font-size:16px">' + esc(p.Nama) + '</div>' +
+          '<div class="body-sm text-secondary">' + esc(p.Jabatan || '—') + '</div>' +
+        '</div>' +
+        '<div class="row-gap" style="gap:6px">' +
+          badgeStatus(p.Status) +
+          '<span class="body-sm text-secondary">' + esc(formatTanggal(p.Tanggal)) + '</span>' +
+        '</div>' +
+      '</div>' +
+
+      '<blockquote style="margin:0;padding:12px 14px;background:var(--bg-muted);' +
+        'border-radius:var(--r-md);font-size:14px;line-height:1.6">' +
+        esc(p.Testimoni) + '</blockquote>' +
+
+      (p.Saran
+        ? '<div class="body-sm"><strong>Saran (hanya untuk Anda):</strong> ' +
+          '<span class="text-secondary">' + esc(p.Saran) + '</span></div>'
+        : '') +
+
+      '<div class="pengajuan-kontak">' +
+        (p.Email ? '<span>' + icon('mail', 14) + esc(p.Email) + '</span>' : '') +
+        (p.NoHP  ? '<span>' + icon('phone', 14) + esc(p.NoHP) + '</span>' : '') +
+      '</div>' +
+
+      (bukti
+        ? '<div><div class="body-sm text-secondary" style="margin-bottom:6px">Gambar bukti:</div>' +
+          '<img class="pengajuan-bukti" src="' + esc(bukti) + '" alt="Bukti dari ' + esc(p.Nama) + '" ' +
+          'onclick="bukaPratinjau(\'' + esc(bukti) + '\',\'Bukti dari ' + esc(p.Nama) + '\')"></div>'
+        : '<div class="body-sm text-secondary">Tidak melampirkan gambar bukti.</div>') +
+
+      '<div class="row-gap" style="gap:8px;flex-wrap:wrap;margin-top:4px">' +
+        (baru
+          ? '<button class="btn btn-primary btn-sm" onclick="setujuiPengajuanKonfirmasi(\'' + id + '\')">' +
+              icon('checkCircle', 16) + ' Setujui &amp; Tayangkan</button>' +
+            '<button class="btn btn-secondary btn-sm" onclick="tolakPengajuanKonfirmasi(\'' + id + '\')">' +
+              icon('xCircle', 16) + ' Tolak</button>'
+          : '') +
+        '<button class="btn btn-ghost btn-sm" onclick="hapusPengajuanKonfirmasi(\'' + id + '\')">' +
+          icon('trash', 16) + ' Hapus</button>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+}
+
+function setujuiPengajuanKonfirmasi(id) {
+  konfirmasi(
+    'Setujui kiriman ini? Testimoninya akan langsung tayang di landing page, ' +
+    'dan gambar buktinya masuk ke section Bukti Nyata.',
+    async function () {
+      const res = await Api.setujuiPengajuan(id);
+      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+      if (res.success) muatDataAdmin();
+    });
+}
+
+function tolakPengajuanKonfirmasi(id) {
+  konfirmasi(
+    'Tolak kiriman ini? Datanya tetap tersimpan sebagai arsip, ' +
+    'hanya saja tidak akan ditayangkan.',
+    async function () {
+      const res = await Api.tolakPengajuan(id);
+      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+      if (res.success) muatDataAdmin();
+    });
+}
+
+function hapusPengajuanKonfirmasi(id) {
+  konfirmasi(
+    'Hapus kiriman ini secara permanen? Testimoni yang sudah terlanjur tayang ' +
+    'tidak ikut terhapus.',
+    async function () {
+      const res = await Api.hapusPengajuan(id);
+      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+      if (res.success) muatDataAdmin();
+    });
 }

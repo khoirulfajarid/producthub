@@ -2,7 +2,7 @@
 <!-- Ganti semua URL di bawah dengan domain GitHub Pages Anda. -->
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
   <url>
-    <loc>https://github.com/khoirulfajarid/producthub.git/</loc>
+    <loc>https://khoirulfajarid.github.io/producthub/</loc>
     <changefreq>weekly</changefreq>
     <priority>1.0</priority>
   </url>

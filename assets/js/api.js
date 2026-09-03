@@ -210,6 +210,26 @@ const Api = {
   hapusTestimoni:   function (id)        { return Api.post('deleteTestimoni', { id: id }); },
   simpanKonfigurasi:function (obj)       { return Api.post('saveConfig', obj); },
 
+  // ── Galeri bukti (admin) ──
+  simpanGaleri:     function (record)    { return Api.post('saveGaleri', record); },
+  hapusGaleri:      function (id)        { return Api.post('deleteGaleri', { id: id }); },
+
+  // ── Antrean pengajuan member (admin) ──
+  setujuiPengajuan: function (id, edit)  {
+    return Api.post('approvePengajuan', Object.assign({ id: id }, edit || {}));
+  },
+  tolakPengajuan:   function (id)        { return Api.post('rejectPengajuan', { id: id }); },
+  hapusPengajuan:   function (id)        { return Api.post('deletePengajuan', { id: id }); },
+
+  /**
+   * Kiriman testimoni dari member — endpoint publik, tanpa token.
+   *
+   * Token tetap ikut terkirim oleh Api.post() dan itu tidak masalah:
+   * server memproses action ini sebelum pemeriksaan token, jadi pengunjung
+   * biasa (yang tokennya kosong) tetap dilayani.
+   */
+  kirimTestimoni:   function (data)      { return Api.post('submitTestimoni', data); },
+
   /** Unggah gambar: base64 → Drive → URL publik. */
   uploadMedia: function (base64, fileName, mimeType, kategori) {
     return Api.post('uploadMedia', {

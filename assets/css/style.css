@@ -779,6 +779,223 @@ select.input { appearance: none; background-image: none; cursor: pointer; }
   padding: 16px 24px; border-top: 1px solid var(--border);
 }
 
+/* ══════════════════════════════════════════════════════════
+   TAMBAHAN v3
+   ══════════════════════════════════════════════════════════ */
+
+/* ── Thumbnail produk yang bisa diklik ───────────────────── */
+/* Dibuat <button> demi keyboard, jadi seluruh gaya bawaan tombol
+   perlu dibatalkan lebih dulu agar tampilannya tetap seperti gambar biasa. */
+.produk-thumb-klik {
+  display: block; width: 100%; padding: 0;
+  border: none; border-bottom: 1px solid var(--border);
+  background: var(--bg-muted); cursor: zoom-in; font: inherit; color: inherit;
+  text-align: left;
+}
+.produk-thumb-klik:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+
+.thumb-overlay {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  background: rgba(17,17,17,.55); color: #FFFFFF;
+  font-size: 13px; font-weight: 600; letter-spacing: .01em;
+  opacity: 0; transition: opacity .22s ease;
+}
+.produk-thumb-klik:hover .thumb-overlay,
+.produk-thumb-klik:focus-visible .thumb-overlay { opacity: 1; }
+
+.media-count {
+  position: absolute; right: 10px; bottom: 10px;
+  display: inline-flex; align-items: center; gap: 4px;
+  padding: 4px 8px; border-radius: var(--r-sm);
+  background: rgba(17,17,17,.72); color: #FFFFFF;
+  font-size: 11px; font-weight: 600;
+}
+
+.produk-nama-klik { cursor: pointer; }
+.produk-nama-klik:hover { color: var(--accent); }
+
+/* ── Kartu bukti nyata ───────────────────────────────────── */
+.bukti-card {
+  position: relative; display: block; width: 100%; padding: 0;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  overflow: hidden; cursor: zoom-in; background: var(--bg-muted);
+  font: inherit; color: inherit;
+  transition: border-color .2s ease, transform .2s ease;
+}
+.bukti-card:hover { border-color: var(--border-strong); transform: translateY(-2px); }
+.bukti-card:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.bukti-card img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; }
+
+.bukti-play {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  width: 48px; height: 48px; display: grid; place-items: center;
+  border-radius: var(--r-full);
+  background: rgba(255,255,255,.92); color: #111111;
+  box-shadow: 0 2px 12px rgba(0,0,0,.25);
+}
+.bukti-play.besar { width: 64px; height: 64px; }
+
+.bukti-cap {
+  display: block; padding: 10px 12px;
+  font-size: 13px; color: var(--text-secondary);
+  background: var(--bg-surface);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+/* ── Lightbox ────────────────────────────────────────────── */
+.modal-lightbox { background: rgba(0,0,0,.88); padding: 16px; }
+.lightbox-box { width: 100%; max-width: 980px; margin: auto; }
+.lightbox-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 12px; color: #FFFFFF;
+}
+.lightbox-head .btn-icon { color: #FFFFFF; border-color: rgba(255,255,255,.3); }
+.lightbox-head .body-sm  { color: rgba(255,255,255,.7); }
+
+.lightbox-panggung { position: relative; }
+.lightbox-isi {
+  display: grid; place-items: center;
+  min-height: 240px; max-height: 74vh; overflow: hidden;
+  border-radius: var(--r-md); background: #000000;
+}
+.lightbox-isi img { max-height: 74vh; width: auto; object-fit: contain; }
+
+.lightbox-nav {
+  position: absolute; top: 50%; transform: translateY(-50%);
+  width: 42px; height: 42px; z-index: 3;
+  display: grid; place-items: center;
+  border: none; cursor: pointer; border-radius: var(--r-full);
+  background: rgba(255,255,255,.9); color: #111111;
+  box-shadow: 0 2px 10px rgba(0,0,0,.25);
+  transition: background .2s ease;
+}
+.lightbox-nav:hover { background: #FFFFFF; }
+.lightbox-nav.prev { left: 12px; }
+.lightbox-nav.next { right: 12px; }
+
+.lightbox-cap {
+  margin: 14px 0 0; text-align: center; color: rgba(255,255,255,.82);
+}
+
+/* Bingkai video 16:9 yang ikut melebar mengikuti wadahnya */
+.rasio-video { position: relative; width: 100%; aspect-ratio: 16 / 9; }
+.rasio-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+
+/* ── Popup detail produk ─────────────────────────────────── */
+.modal-lebar { max-width: 780px; }
+
+.detail-panggung { position: relative; }
+.detail-slides {
+  position: relative;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  overflow: hidden; background: var(--bg-muted);
+  aspect-ratio: 16 / 9;
+}
+.detail-slides > img { width: 100%; height: 100%; object-fit: contain; }
+
+.detail-kosong {
+  width: 100%; height: 100%;
+  display: grid; place-items: center; align-content: center; gap: 8px;
+  color: var(--text-muted);
+}
+.detail-kosong p { margin: 0; }
+
+/* Sampul video: iframe baru dimuat setelah ditekan */
+.video-facade {
+  position: relative; display: block; width: 100%; height: 100%;
+  padding: 0; border: none; cursor: pointer; background: #000000;
+}
+.video-facade img { width: 100%; height: 100%; object-fit: cover; }
+
+/* Titik navigasi dipakai ulang di dalam modal — posisinya harus statis
+   di sini, berbeda dari versi hero yang mengambang di atas gambar. */
+#detailDots.hero-dots { position: static; }
+#detailDots .hero-dot { background: var(--border-strong); }
+#detailDots .hero-dot.active { background: var(--accent); }
+
+.detail-harga {
+  font-size: 22px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--text-primary); margin-bottom: 10px;
+}
+.detail-desc {
+  margin: 0; font-size: 15px; line-height: 1.65; color: var(--text-secondary);
+  white-space: pre-line;
+}
+
+/* ── Form kiriman member ─────────────────────────────────── */
+.upload-zone.kecil { padding: 16px; }
+.upload-preview.bulat {
+  width: 84px; height: 84px; border-radius: var(--r-full); object-fit: cover;
+}
+
+.sukses-ikon {
+  width: 68px; height: 68px; margin: 0 auto;
+  display: grid; place-items: center; border-radius: var(--r-full);
+  background: var(--success-soft); color: var(--success);
+}
+
+/* ── Modul admin: galeri bukti & antrean pengajuan ───────── */
+.galeri-grid {
+  display: grid; gap: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+}
+.galeri-item {
+  position: relative;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  overflow: hidden; background: var(--bg-surface);
+}
+.galeri-item img { width: 100%; aspect-ratio: 16 / 10; object-fit: cover; background: var(--bg-muted); }
+.galeri-item .isi { padding: 12px; display: flex; flex-direction: column; gap: 8px; }
+.galeri-item .judul {
+  font-size: 14px; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.galeri-item .aksi { display: flex; gap: 6px; }
+
+.pengajuan-card {
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--bg-surface); padding: 20px;
+  display: grid; gap: 16px; grid-template-columns: 96px 1fr;
+}
+.pengajuan-card + .pengajuan-card { margin-top: 16px; }
+.pengajuan-card.baru { border-left: 3px solid var(--accent); }
+
+.pengajuan-foto {
+  width: 96px; height: 96px; border-radius: var(--r-full);
+  object-fit: cover; background: var(--bg-muted); border: 1px solid var(--border);
+}
+.pengajuan-foto-kosong {
+  width: 96px; height: 96px; border-radius: var(--r-full);
+  display: grid; place-items: center;
+  background: var(--bg-muted); color: var(--text-muted);
+  font-size: 30px; font-weight: 600; border: 1px solid var(--border);
+}
+.pengajuan-bukti {
+  max-width: 220px; border: 1px solid var(--border); border-radius: var(--r-sm);
+  cursor: zoom-in;
+}
+.pengajuan-kontak {
+  display: flex; flex-wrap: wrap; gap: 14px;
+  font-size: 13px; color: var(--text-secondary);
+}
+.pengajuan-kontak span { display: inline-flex; align-items: center; gap: 5px; }
+
+@media (max-width: 640px) {
+  .pengajuan-card { grid-template-columns: 1fr; }
+  .lightbox-nav { width: 36px; height: 36px; }
+  .lightbox-nav.prev { left: 4px; }
+  .lightbox-nav.next { right: 4px; }
+}
+
+/* Penanda jumlah pengajuan baru di sidebar */
+.nav-badge {
+  display: inline-grid; place-items: center; min-width: 20px; height: 20px;
+  margin-left: auto; padding: 0 6px; border-radius: var(--r-full);
+  background: var(--accent); color: #FFFFFF;
+  font-size: 11px; font-weight: 700;
+}
+
 /* ── TOAST ───────────────────────────────────────────────── */
 .toast-stack {
   position: fixed; bottom: 20px; right: 20px; z-index: 300;

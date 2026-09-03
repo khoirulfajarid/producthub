@@ -23,13 +23,28 @@ const AppState = {
   hero: {},
   keunggulan: [],
   testimoni: [],
+  galeri: [],
   config: {},
 
   // Slideshow hero
   heroSlides: [],
   heroIndex: 0,
   heroTimer: null,
-  heroPaused: false
+  heroPaused: false,
+
+  // Lightbox bukti nyata
+  lightboxIndex: 0,
+
+  // Popup detail produk
+  detailSlides: [],
+  detailIndex: 0,
+
+  // Berkas yang dipilih di form kiriman member (belum diunggah)
+  berkasProfil: null,
+  berkasBukti: null,
+
+  // Agar angka social proof hanya dihitung sekali per kunjungan
+  statSudahDianimasi: false
 };
 
 // ════════════════════════════════════════════════════════════
@@ -39,6 +54,9 @@ const AppState = {
 document.addEventListener('DOMContentLoaded', function () {
   hydrateIcons();
   muatTemaTersimpan();
+  pasangPenutupModal();
+  pasangTombolPanahModal();
+  pasangPenggantiGambar();
 
   window.addEventListener('resize', function () {
     perbaruiTombolRail('produkRail');
@@ -46,6 +64,39 @@ document.addEventListener('DOMContentLoaded', function () {
 
   muatDataAwal();
 });
+
+/**
+ * Panah kiri/kanan pada keyboard menggerakkan lightbox dan popup produk.
+ * Dipasang sekali di tingkat dokumen — jauh lebih ringan daripada
+ * memasang listener pada setiap slide.
+ */
+function pasangTombolPanahModal() {
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    const maju = e.key === 'ArrowRight';
+
+    if (document.getElementById('modalLightbox').classList.contains('open')) {
+      geserLightbox(maju ? 1 : -1);
+    } else if (document.getElementById('modalDetail').classList.contains('open')) {
+      geserDetail(maju ? 1 : -1);
+    }
+  });
+
+  // Menutup lightbox atau popup produk harus menghentikan video yang
+  // sedang berputar — kalau tidak, suaranya terus terdengar di latar.
+  ['modalLightbox', 'modalDetail'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    new MutationObserver(function () {
+      if (!el.classList.contains('open')) hentikanVideo(el);
+    }).observe(el, { attributes: true, attributeFilter: ['class'] });
+  });
+}
+
+/** Buang seluruh iframe di dalam sebuah wadah agar pemutaran benar-benar berhenti. */
+function hentikanVideo(wadah) {
+  wadah.querySelectorAll('iframe').forEach(function (f) { f.remove(); });
+}
 
 /** Satu panggilan server untuk seluruh isi landing page. */
 async function muatDataAwal() {
@@ -61,6 +112,7 @@ async function muatDataAwal() {
   AppState.hero       = res.data.hero || {};
   AppState.keunggulan = res.data.keunggulan || [];
   AppState.testimoni  = res.data.testimoni || [];
+  AppState.galeri     = res.data.galeri || [];
   AppState.config     = res.data.config || {};
 
   renderLanding();
@@ -169,6 +221,8 @@ function renderLanding() {
   renderDemoMarquee();
   renderStatGrid();
   renderTestimoniMarquee();
+  renderGaleriBukti();
+  siapkanFormKirim();
 }
 
 // ── Slideshow hero ──────────────────────────────────────────
@@ -301,15 +355,29 @@ function kartuProduk(p, modeDemo) {
     '</article>';
   }
 
+  // Thumbnail adalah pintu masuk ke galeri produk. Dibuat sebagai <button>
+  // supaya bisa difokuskan dengan Tab dan ditekan dengan Enter — bukan
+  // sekadar <div> yang hanya patuh pada klik mouse.
+  const jumlahMedia = daftarMediaProduk(p).length;
+
   return '<article class="produk-card">' +
-    '<div class="produk-thumb">' +
+    '<button type="button" class="produk-thumb produk-thumb-klik" ' +
+            'onclick="bukaDetailProduk(\'' + id + '\')" ' +
+            'aria-label="Lihat galeri ' + esc(p.NamaProduk) + '">' +
       (thumb
         ? '<img src="' + esc(thumb) + '" alt="' + esc(p.NamaProduk) + '" loading="lazy">'
         : '<div class="produk-thumb-empty">' + icon('image', 22) + '</div>') +
-    '</div>' +
+      '<span class="thumb-overlay">' + icon('eye', 20) +
+        '<span>Lihat Detail</span>' +
+      '</span>' +
+      (jumlahMedia > 1
+        ? '<span class="media-count">' + icon('image', 13) + ' ' + jumlahMedia + '</span>'
+        : '') +
+    '</button>' +
     '<div class="produk-body">' +
       '<div class="row-between" style="align-items:flex-start">' +
-        '<h3 class="produk-nama">' + esc(p.NamaProduk) + '</h3>' +
+        '<h3 class="produk-nama produk-nama-klik" onclick="bukaDetailProduk(\'' + id + '\')">' +
+          esc(p.NamaProduk) + '</h3>' +
         (p.Badge ? '<span class="badge-chip badge-accent">' + esc(p.Badge) + '</span>' : '') +
       '</div>' +
       '<p class="produk-desc">' + esc(p.Deskripsi) + '</p>' +
@@ -465,11 +533,56 @@ function renderStatGrid() {
   if (!stats.length) { grid.innerHTML = ''; return; }
 
   grid.innerHTML = stats.map(function (s) {
+    // Nilai akhir disimpan di data-nilai; isi awal sengaja dibiarkan
+    // terbaca supaya pengunjung tanpa JavaScript tetap melihat angkanya.
     return '<div class="stat-box">' +
              '<div class="label-md">' + esc(s.label) + '</div>' +
-             '<div class="stat-num">' + esc(s.nilai) + '</div>' +
+             '<div class="stat-num" data-nilai="' + esc(s.nilai) + '">' + esc(s.nilai) + '</div>' +
            '</div>';
   }).join('');
+
+  siapkanAnimasiStat();
+}
+
+/**
+ * Jalankan hitung-naik saat kotak angka benar-benar terlihat pengunjung.
+ *
+ * Menganimasikannya saat halaman dimuat akan sia-sia — section ini berada
+ * jauh di bawah layar pertama, dan angkanya sudah selesai berhitung sebelum
+ * sempat dilihat. IntersectionObserver membuatnya menyala tepat waktu.
+ */
+function siapkanAnimasiStat() {
+  const grid = document.getElementById('statGrid');
+  if (!grid) return;
+
+  const aktif = String(AppState.config.statCountEnabled === undefined
+    ? '1' : AppState.config.statCountEnabled);
+
+  if (aktif === '0' || aktif.toLowerCase() === 'false') return;
+
+  const durasi = Number(AppState.config.statCountDuration) || 2000;
+
+  function jalankan() {
+    if (AppState.statSudahDianimasi) return;
+    AppState.statSudahDianimasi = true;
+    grid.querySelectorAll('.stat-num').forEach(function (el, i) {
+      // Jeda bertingkat antar kotak — terasa mengalir, bukan serentak
+      setTimeout(function () {
+        animasiAngka(el, el.getAttribute('data-nilai'), durasi);
+      }, i * 120);
+    });
+  }
+
+  if (typeof IntersectionObserver === 'undefined') { jalankan(); return; }
+
+  const pengamat = new IntersectionObserver(function (entries) {
+    if (entries[0].isIntersecting) {
+      jalankan();
+      pengamat.disconnect();
+    }
+  }, { threshold: 0.35 });
+
+  pengamat.observe(grid);
 }
 
 function kartuTestimoni(t) {
@@ -528,7 +641,10 @@ function renderTestimoniMarquee() {
 
 /** Gulir halus ke section. */
 function scrollToSection(nama) {
-  const map = { hero: 'sec-hero', produk: 'sec-produk', demo: 'sec-demo', testimoni: 'sec-testimoni' };
+  const map = {
+    hero: 'sec-hero', produk: 'sec-produk', demo: 'sec-demo',
+    testimoni: 'sec-testimoni', bukti: 'sec-bukti'
+  };
   const el = document.getElementById(map[nama] || nama);
   if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   document.getElementById('navLinks').classList.remove('open');
@@ -548,4 +664,364 @@ function trackCta(produkId) {
 function trackDemo(produkId) {
   Api.track('demo', produkId);
   return true;
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 5: BUKTI NYATA — running image & video
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Section pembuktian: tangkapan layar dan video dari pengguna sungguhan.
+ *
+ * Testimoni berupa teks mudah ditulis siapa saja; gambar dashboard yang
+ * benar-benar terpakai jauh lebih sulit dipalsukan. Itu sebabnya section
+ * ini berdiri sendiri, tepat setelah testimoni.
+ */
+function renderGaleriBukti() {
+  const list = AppState.galeri;
+  const section = document.getElementById('sec-bukti');
+  const c = AppState.config;
+
+  // Judul & subjudul bisa diganti admin tanpa menyentuh kode
+  const judul = document.getElementById('buktiJudul');
+  const sub   = document.getElementById('buktiSub');
+  if (judul) judul.textContent = c.galeriJudul || 'Bukti Nyata dari Pengguna';
+  if (sub)   sub.textContent   = c.galeriSubjudul ||
+    'Tangkapan layar dan video asli dari mereka yang sudah memakainya.';
+
+  // Tombol ajakan mengirim hanya tampil bila form memang dibuka admin
+  const formAktif = String(c.formMemberEnabled === undefined ? '1' : c.formMemberEnabled);
+  const bolehKirim = formAktif !== '0' && formAktif.toLowerCase() !== 'false';
+  document.querySelectorAll('[data-kirim-cta]').forEach(function (el) {
+    el.classList.toggle('hidden', !bolehKirim);
+  });
+
+  // Tanpa bukti sama sekali, section ini hanya akan terlihat kosong —
+  // lebih baik disembunyikan sepenuhnya kecuali form masih terbuka.
+  if (!list.length) {
+    section.classList.toggle('hidden', !bolehKirim);
+    document.getElementById('buktiMarquee').classList.add('hidden');
+    return;
+  }
+
+  section.classList.remove('hidden');
+  document.getElementById('buktiMarquee').classList.remove('hidden');
+
+  isiMarquee('buktiTrack',
+    list.map(function (g, i) { return kartuBukti(g, i); }),
+    c.galeriSpeed || 45);
+
+  pasangJeda(document.getElementById('buktiMarquee'));
+}
+
+/** Satu kartu bukti. Video ditandai jelas agar tidak dikira gambar diam. */
+function kartuBukti(g, i) {
+  const url = safeUrl(g.Url);
+  if (!url) return '';
+
+  const vid = youtubeId(url);
+  const gambar = vid ? youtubeThumb(vid) : url;
+  const judul = g.Judul || (vid ? 'Video bukti' : 'Tangkapan layar');
+
+  return '<button type="button" class="bukti-card" onclick="bukaLightbox(' + i + ')" ' +
+           'aria-label="Perbesar: ' + esc(judul) + '">' +
+    '<img src="' + esc(gambar) + '" alt="' + esc(judul) + '" loading="lazy">' +
+    (vid ? '<span class="bukti-play">' + icon('play', 20) + '</span>' : '') +
+    '<span class="bukti-cap">' + esc(judul) + '</span>' +
+  '</button>';
+}
+
+function bukaLightbox(i) {
+  if (!AppState.galeri.length) return;
+  AppState.lightboxIndex = i;
+  renderLightbox();
+  openModal('modalLightbox');
+}
+
+function geserLightbox(arah) {
+  const total = AppState.galeri.length;
+  if (total < 2) return;
+  AppState.lightboxIndex = ((AppState.lightboxIndex + arah) % total + total) % total;
+  renderLightbox();
+}
+
+function renderLightbox() {
+  const g = AppState.galeri[AppState.lightboxIndex];
+  const isi = document.getElementById('lightboxIsi');
+  if (!g || !isi) return;
+
+  hentikanVideo(isi);
+
+  const url = safeUrl(g.Url);
+  const vid = youtubeId(url);
+
+  // Video langsung diputar karena pengunjung memang menekan untuk melihatnya
+  isi.innerHTML = vid
+    ? '<div class="rasio-video"><iframe src="' + esc(youtubeEmbed(vid, true)) + '" ' +
+      'title="' + esc(g.Judul || 'Video bukti') + '" frameborder="0" ' +
+      'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" ' +
+      'allowfullscreen></iframe></div>'
+    : '<img src="' + esc(url) + '" alt="' + esc(g.Judul || 'Bukti') + '">';
+
+  document.getElementById('lightboxCap').textContent = g.Judul || '';
+  document.getElementById('lightboxPos').textContent =
+    (AppState.lightboxIndex + 1) + ' / ' + AppState.galeri.length;
+
+  const banyak = AppState.galeri.length > 1;
+  document.querySelectorAll('#modalLightbox .lightbox-nav').forEach(function (b) {
+    b.classList.toggle('hidden', !banyak);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 6: POPUP DETAIL PRODUK
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Kumpulkan seluruh media satu produk: thumbnail lebih dulu, lalu isi
+ * kolom Galeri (gambar maupun tautan YouTube, satu URL per baris).
+ * Duplikat dibuang supaya thumbnail tidak muncul dua kali.
+ */
+function daftarMediaProduk(p) {
+  const hasil = [];
+  const thumb = safeUrl(p.Thumbnail);
+  if (thumb) hasil.push(thumb);
+
+  bacaDaftarUrl(p.Galeri, APP_CONFIG.MAX_GALERI_PRODUK).forEach(function (u) {
+    if (hasil.indexOf(u) === -1) hasil.push(u);
+  });
+
+  return hasil;
+}
+
+function bukaDetailProduk(id) {
+  const p = AppState.produk.filter(function (x) { return String(x.ID) === String(id); })[0];
+  if (!p) return;
+
+  AppState.detailSlides = daftarMediaProduk(p);
+  AppState.detailIndex = 0;
+
+  document.getElementById('detailJudul').textContent = p.NamaProduk || 'Detail Produk';
+  document.getElementById('detailHarga').textContent = formatRupiah(p.Harga);
+  document.getElementById('detailDesc').textContent =
+    p.Deskripsi || 'Belum ada deskripsi untuk produk ini.';
+
+  const badge = document.getElementById('detailBadge');
+  badge.textContent = p.Badge || '';
+  badge.classList.toggle('hidden', !p.Badge);
+
+  // Tombol aksi mengikuti data produk — tidak ada tombol mati yang membingungkan
+  const demo = safeUrl(p.LinkDemo);
+  const checkout = safeUrl(p.LinkCheckout);
+  document.getElementById('detailActions').innerHTML =
+    (demo
+      ? '<a class="btn btn-secondary" href="' + esc(demo) + '" target="_blank" rel="noopener" ' +
+        'onclick="trackDemo(\'' + esc(p.ID) + '\')">' + icon('external', 16) + ' Lihat Demo</a>'
+      : '') +
+    (checkout
+      ? '<a class="btn btn-primary" href="' + esc(checkout) + '" target="_blank" rel="noopener" ' +
+        'onclick="trackCta(\'' + esc(p.ID) + '\')">Beli Sekarang</a>'
+      : '<button class="btn btn-primary" disabled>Segera Hadir</button>');
+
+  renderDetailSlide();
+  openModal('modalDetail');
+}
+
+/**
+ * Tampilkan satu slide saja, bukan semuanya sekaligus.
+ *
+ * Video dimuat sebagai gambar sampul dengan tombol putar (facade), bukan
+ * iframe langsung: satu produk dengan lima video tidak akan menyeret lima
+ * pemutar YouTube ke dalam halaman hanya untuk berjaga-jaga.
+ */
+function renderDetailSlide() {
+  const panggung = document.getElementById('detailSlides');
+  const slides = AppState.detailSlides;
+
+  hentikanVideo(panggung);
+
+  if (!slides.length) {
+    panggung.innerHTML = '<div class="detail-kosong">' + icon('image', 28) +
+      '<p class="body-sm">Belum ada gambar untuk produk ini.</p></div>';
+    document.getElementById('detailDots').innerHTML = '';
+    document.querySelectorAll('#modalDetail .lightbox-nav').forEach(function (b) {
+      b.classList.add('hidden');
+    });
+    return;
+  }
+
+  const url = slides[AppState.detailIndex];
+  const vid = youtubeId(url);
+
+  panggung.innerHTML = vid
+    ? '<button type="button" class="video-facade" onclick="putarVideoDetail()" ' +
+        'aria-label="Putar video pratinjau">' +
+        '<img src="' + esc(youtubeThumb(vid)) + '" alt="Pratinjau video">' +
+        '<span class="bukti-play besar">' + icon('play', 26) + '</span>' +
+      '</button>'
+    : '<img src="' + esc(url) + '" alt="Tampilan produk ' +
+      (AppState.detailIndex + 1) + '">';
+
+  const banyak = slides.length > 1;
+  document.querySelectorAll('#modalDetail .lightbox-nav').forEach(function (b) {
+    b.classList.toggle('hidden', !banyak);
+  });
+
+  document.getElementById('detailDots').innerHTML = banyak
+    ? slides.map(function (_, i) {
+        return '<button class="hero-dot' + (i === AppState.detailIndex ? ' active' : '') + '" ' +
+               'onclick="detailGoTo(' + i + ')" aria-label="Media ' + (i + 1) + '"></button>';
+      }).join('')
+    : '';
+}
+
+/** Ganti sampul video dengan pemutar sungguhan setelah ditekan. */
+function putarVideoDetail() {
+  const vid = youtubeId(AppState.detailSlides[AppState.detailIndex]);
+  if (!vid) return;
+
+  document.getElementById('detailSlides').innerHTML =
+    '<div class="rasio-video"><iframe src="' + esc(youtubeEmbed(vid, true)) + '" ' +
+    'title="Video pratinjau produk" frameborder="0" ' +
+    'allow="accelerometer; autoplay; clipboard-write; encrypted-media; picture-in-picture" ' +
+    'allowfullscreen></iframe></div>';
+}
+
+function geserDetail(arah) {
+  const total = AppState.detailSlides.length;
+  if (total < 2) return;
+  AppState.detailIndex = ((AppState.detailIndex + arah) % total + total) % total;
+  renderDetailSlide();
+}
+
+function detailGoTo(i) {
+  AppState.detailIndex = i;
+  renderDetailSlide();
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 7: FORM KIRIMAN MEMBER
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Form ini yang membuat section testimoni dan bukti bisa tumbuh sendiri:
+ * member mengisi, admin tinggal menyetujui. Tidak ada lagi menyalin
+ * tangkapan layar satu per satu dari chat.
+ *
+ * Yang tayang ke publik hanya nama, testimoni, foto profil, dan gambar
+ * buktinya. Email, nomor HP, dan saran tetap tinggal di dashboard.
+ */
+function siapkanFormKirim() {
+  // Tautan langsung index.html#kirim membuka form seketika — memudahkan
+  // admin membagikan satu tautan saja ke grup membernya.
+  if (window.location.hash === '#kirim') {
+    setTimeout(bukaFormKirim, 400);
+  }
+}
+
+function bukaFormKirim() {
+  const form = document.getElementById('kirimForm');
+  const sukses = document.getElementById('kirimSukses');
+
+  // Selalu mulai dari keadaan bersih — modal yang sama bisa dibuka berkali-kali
+  form.classList.remove('hidden');
+  sukses.classList.add('hidden');
+  form.reset();
+  AppState.berkasProfil = null;
+  AppState.berkasBukti = null;
+  ['previewProfil', 'previewBukti'].forEach(function (id) {
+    const el = document.getElementById(id);
+    el.src = '';
+    el.classList.add('hidden');
+  });
+
+  openModal('modalKirim');
+}
+
+/**
+ * Simpan berkas pilihan di memori dan tampilkan pratinjau seketika.
+ * Unggahan sesungguhnya baru terjadi saat tombol kirim ditekan — kalau
+ * pengunjung berubah pikiran, tidak ada berkas nyasar di Drive Anda.
+ */
+async function pilihBerkasKirim(input, jenis) {
+  const file = input.files[0];
+  if (!file) return;
+
+  if (file.type.indexOf('image/') !== 0) {
+    showToast('Format tidak didukung', 'Gunakan berkas gambar (PNG, JPG, atau WebP).', 'warning');
+    input.value = '';
+    return;
+  }
+  if (file.size > APP_CONFIG.MAX_KIRIMAN_BYTES) {
+    showToast('Ukuran terlalu besar',
+      'Maksimal 3 MB. Kompres gambarnya dulu, ya.', 'warning');
+    input.value = '';
+    return;
+  }
+
+  try {
+    const hasil = await bacaFileBase64(file);
+    const data = {
+      base64: hasil.base64,
+      fileName: file.name,
+      mimeType: file.type
+    };
+
+    if (jenis === 'profil') AppState.berkasProfil = data;
+    else AppState.berkasBukti = data;
+
+    const img = document.getElementById(jenis === 'profil' ? 'previewProfil' : 'previewBukti');
+    img.src = hasil.dataUrl;
+    img.classList.remove('hidden');
+
+  } catch (err) {
+    showToast('Gagal membaca berkas', err.message, 'danger');
+    input.value = '';
+  }
+}
+
+async function submitKirimTestimoni(e) {
+  e.preventDefault();
+
+  const form = e.target;
+  const nilai = {};
+  new FormData(form).forEach(function (v, k) { nilai[k] = String(v).trim(); });
+
+  if (!nilai.nama || nilai.nama.length < 2) {
+    showToast('Nama belum diisi', 'Tuliskan nama Anda lebih dulu.', 'warning');
+    return;
+  }
+  if (!nilai.testimoni || nilai.testimoni.length < 10) {
+    showToast('Testimoni terlalu pendek',
+      'Ceritakan sedikit lebih banyak — minimal 10 karakter.', 'warning');
+    return;
+  }
+
+  const tombol = document.getElementById('kirimBtn');
+  const pulihkan = setBtnLoading(tombol, 'Mengirim…');
+
+  const res = await Api.kirimTestimoni({
+    nama: nilai.nama,
+    jabatan: nilai.jabatan,
+    email: nilai.email,
+    noHp: nilai.noHp,
+    testimoni: nilai.testimoni,
+    saran: nilai.saran,
+    fotoProfil: AppState.berkasProfil,
+    fotoBukti: AppState.berkasBukti
+  });
+
+  pulihkan();
+
+  if (!res.success) {
+    showToast('Gagal mengirim', res.message, 'danger');
+    return;
+  }
+
+  // Ganti form dengan pesan terima kasih — memberi kepastian bahwa
+  // kiriman sudah masuk dan menjelaskan mengapa belum langsung tampil.
+  form.classList.add('hidden');
+  document.getElementById('kirimSukses').classList.remove('hidden');
+  AppState.berkasProfil = null;
+  AppState.berkasBukti = null;
 }

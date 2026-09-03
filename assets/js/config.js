@@ -33,6 +33,16 @@ const APP_CONFIG = {
   /** Maksimum slide pada hero. */
   MAX_HERO_SLIDES: 8,
 
+  /** Maksimum slide pada popup detail produk. */
+  MAX_GALERI_PRODUK: 10,
+
+  /**
+   * Batas ukuran gambar yang dikirim lewat form publik (byte).
+   * Lebih ketat daripada unggahan admin: form ini terbuka untuk siapa saja,
+   * dan server menolak apa pun di atas 3 MB.
+   */
+  MAX_KIRIMAN_BYTES: 3 * 1024 * 1024,  // 3 MB
+
   /**
    * Jeda minimum antar pencatatan kunjungan dari satu browser (milidetik).
    * Mencegah angka pengunjung menggelembung saat halaman di-refresh
