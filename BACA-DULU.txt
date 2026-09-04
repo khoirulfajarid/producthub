@@ -1,0 +1,24 @@
+ProductHub Creator — Paket Upgrade v3.1
+========================================
+
+Isi ZIP ini adalah 7 BERKAS PENGGANTI untuk repo producthub Anda.
+Struktur folder di dalam ZIP sudah persis sama dengan struktur repo,
+jadi cukup salin seluruh isinya ke folder repo dan pilih "Replace".
+
+  index.html
+  admin.html
+  assets/css/style.css
+  assets/js/ui.js
+  assets/js/api.js
+  assets/js/landing.js
+  assets/js/admin.js
+
+PENTING — assets/js/config.js SENGAJA TIDAK ADA di ZIP ini.
+Berkas itu menyimpan GAS_URL Anda. Kalau ikut ditimpa, URL Apps
+Script Anda akan hilang dan situs berhenti memuat data. Karena
+tidak ada di sini, config.js Anda otomatis aman.
+
+Backend (Kode.gs) dikirim TERPISAH di percakapan, bukan di ZIP ini,
+karena isinya disalin-tempel ke editor Apps Script.
+
+Langkah lengkapnya ada di PANDUAN-UPGRADE-V31.md

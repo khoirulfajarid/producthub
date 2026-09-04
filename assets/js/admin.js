@@ -205,10 +205,19 @@ async function muatDataAdmin() {
  * langsung apa yang perlu dijalankan.
  */
 function ingatkanMigrasi() {
-  if (AdminState.data.siapV3 !== false) return;
-  showToast('Database perlu diperbarui',
-    'Jalankan fungsi upgradeKeV3() sekali di editor Apps Script agar modul ' +
-    'Bukti Nyata dan Pengajuan bisa dipakai.', 'warning');
+  if (AdminState.data.siapV3 === false) {
+    showToast('Database perlu diperbarui',
+      'Jalankan fungsi upgradeKeV3() sekali di editor Apps Script agar modul ' +
+      'Bukti Nyata dan Pengajuan bisa dipakai.', 'warning');
+    return;
+  }
+
+  // Sheet Pesan menyusul di v3.1 — tanpa itu form "Hubungi Admin" menolak kiriman.
+  if (AdminState.data.siapV31 === false) {
+    showToast('Satu langkah lagi',
+      'Jalankan fungsi upgradeKeV31() sekali di editor Apps Script agar tombol ' +
+      '"Hubungi Admin" bisa menerima pesan.', 'warning');
+  }
 }
 
 function renderDashboard() {
@@ -423,7 +432,7 @@ function isiFormHero() {
   const h = AdminState.data.hero || {};
   const map = {
     heroInHeadline: 'Headline', heroInSub: 'Subheadline', heroInCta: 'TeksCTA',
-    heroInCtaSec: 'TeksCTASekunder',
+    heroInCtaSec: 'TeksCTASekunder', heroInCtaLink: 'LinkCTA',
     heroInClosingTitle: 'JudulPenutup', heroInClosingDesc: 'DeskripsiPenutup',
     heroInClosingCta: 'TeksCTAPenutup', heroInClosingLink: 'LinkCTAPenutup'
   };
@@ -938,7 +947,9 @@ function isiFormKonfigurasi() {
     cfgDemoSpeed: 'demoSpeed', cfgTestiSpeed: 'testiSpeed',
     cfgGaleriSpeed: 'galeriSpeed',
     cfgStatDurasi: 'statCountDuration',
-    cfgGaleriJudul: 'galeriJudul', cfgGaleriSub: 'galeriSubjudul'
+    cfgGaleriJudul: 'galeriJudul', cfgGaleriSub: 'galeriSubjudul',
+    cfgAdminEmail: 'adminEmail',
+    cfgKontakJudul: 'kontakJudul', cfgKontakSub: 'kontakSubjudul'
   };
   Object.keys(map).forEach(function (id) {
     const el = document.getElementById(id);
@@ -949,6 +960,7 @@ function isiFormKonfigurasi() {
   // dan bawaannya adalah aktif — sama seperti yang dipakai landing page.
   isiSaklar('cfgStatCount', c.statCountEnabled);
   isiSaklar('cfgFormMember', c.formMemberEnabled);
+  isiSaklar('cfgKontak', c.kontakEnabled);
 }
 
 function isiSaklar(elId, nilai) {

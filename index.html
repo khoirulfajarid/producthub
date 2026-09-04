@@ -127,9 +127,13 @@
     </p>
     <div class="hero-actions">
       <a id="heroCtaPrimary" class="btn btn-primary btn-lg" href="#sec-produk"
-         onclick="scrollToSection('produk'); return false;">Beli Sekarang</a>
+         onclick="scrollToSection('produk'); return false;">Mulai Sekarang</a>
       <a id="heroCtaSecondary" class="btn btn-secondary btn-lg" href="#sec-demo"
          onclick="scrollToSection('demo'); return false;">Lihat Demo</a>
+      <button type="button" id="heroCtaKontak" class="btn btn-ghost btn-lg" data-kontak-cta
+              onclick="bukaFormKontak('hero')">
+        <span data-icon="mail" data-icon-size="18"></span> Hubungi Admin
+      </button>
     </div>
   </div>
 
@@ -271,9 +275,13 @@
   <div class="container-ph center">
     <h2 id="closingTitle" class="h-lg">Siap meluncurkan produk berikutnya?</h2>
     <p id="closingDesc" class="body-lg text-secondary" style="max-width:560px;margin:16px auto 0"></p>
-    <div style="margin-top:32px">
+    <div class="closing-actions">
       <a id="closingCta" class="btn btn-primary btn-lg btn-attract" href="#" target="_blank"
          rel="noopener" onclick="trackCta('closing')">Mulai Sekarang</a>
+      <button type="button" class="btn btn-secondary btn-lg" data-kontak-cta
+              onclick="bukaFormKontak('penutup')">
+        <span data-icon="mail" data-icon-size="18"></span> Hubungi Admin
+      </button>
     </div>
   </div>
 </section>
@@ -306,6 +314,7 @@
         <h4>Bantuan</h4>
         <ul>
           <li id="footerWaItem"><a id="footerWa" href="#" target="_blank" rel="noopener">Hubungi via WhatsApp</a></li>
+          <li data-kontak-cta><a href="#" onclick="bukaFormKontak('footer'); return false;">Kirim Pesan / Email</a></li>
           <li><a href="admin.html" rel="nofollow">Panel Admin</a></li>
         </ul>
       </div>
@@ -491,6 +500,120 @@
         </button>
       </div>
     </form>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: Hubungi Admin — dua jalur, WhatsApp & Email
+     ══════════════════════════════════════════════════════════ -->
+<div id="modalKontak" class="modal-backdrop-ph">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3 class="h-md" id="kontakJudul">Ada yang ingin ditanyakan?</h3>
+      <button class="btn-icon" onclick="closeModal('modalKontak')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+
+    <!-- Layar setelah pesan terkirim -->
+    <div id="kontakSukses" class="hidden">
+      <div class="modal-body center">
+        <div class="sukses-ikon"><span data-icon="checkCircle" data-icon-size="34"></span></div>
+        <h4 class="h-md" style="margin:16px 0 8px">Pesan terkirim</h4>
+        <p class="body-sm text-secondary" style="max-width:380px;margin:0 auto">
+          Terima kasih — pesan Anda sudah masuk ke kotak masuk admin.
+          Balasan akan dikirim ke alamat email yang Anda tulis.
+        </p>
+      </div>
+      <div class="modal-foot">
+        <button type="button" class="btn btn-primary" onclick="closeModal('modalKontak')">Tutup</button>
+      </div>
+    </div>
+
+    <div id="kontakIsi">
+      <div class="modal-body">
+        <p class="body-sm text-secondary" style="margin:0 0 20px" id="kontakSubjudul">
+          Kirim pesan lewat email, atau chat langsung via WhatsApp.
+        </p>
+
+        <!-- Jalur cepat: WhatsApp -->
+        <a id="kontakWa" class="kontak-wa hidden" href="#" target="_blank" rel="noopener"
+           onclick="trackCta('wa')">
+          <span class="kontak-wa-ikon" data-icon="phone" data-icon-size="20"></span>
+          <span class="kontak-wa-teks">
+            <strong>Chat WhatsApp Admin</strong>
+            <span class="body-sm">Balasan paling cepat — langsung ke ponsel admin</span>
+          </span>
+          <span data-icon="external" data-icon-size="16"></span>
+        </a>
+
+        <div class="kontak-pisah" id="kontakPisah"><span>atau kirim email</span></div>
+
+        <form id="kontakForm" onsubmit="submitKontak(event)">
+          <div class="field-row">
+            <div class="field">
+              <label for="knNama">Nama *</label>
+              <input type="text" class="input" id="knNama" name="nama" required
+                     maxlength="80" placeholder="Nama Anda">
+            </div>
+            <div class="field">
+              <label for="knEmail">Email *</label>
+              <input type="email" class="input" id="knEmail" name="email" required
+                     maxlength="120" placeholder="nama@email.com">
+            </div>
+          </div>
+
+          <div class="field">
+            <label for="knSubjek">Subjek</label>
+            <input type="text" class="input" id="knSubjek" name="subjek"
+                   maxlength="120" placeholder="Misal: Tanya harga paket bundling">
+          </div>
+
+          <div class="field">
+            <label for="knPesan">Pesan *</label>
+            <textarea class="input" id="knPesan" name="pesan" rows="5" required
+                      maxlength="1500" placeholder="Tuliskan pertanyaan atau kebutuhan Anda…"></textarea>
+            <div class="hint">Minimal 10 karakter. Balasan dikirim ke email di atas.</div>
+          </div>
+
+          <div class="modal-foot" style="padding-left:0;padding-right:0;padding-bottom:0">
+            <button type="button" class="btn btn-secondary" onclick="closeModal('modalKontak')">Batal</button>
+            <button type="submit" class="btn btn-primary" id="kontakBtn">
+              <span data-icon="send" data-icon-size="16"></span> Kirim Pesan
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════════════════
+     MODAL: Testimoni lengkap — dibuka dari tombol "Baca selengkapnya"
+     ══════════════════════════════════════════════════════════ -->
+<div id="modalTestimoni" class="modal-backdrop-ph">
+  <div class="modal-box narrow">
+    <div class="modal-head">
+      <h3 class="h-md">Testimoni Lengkap</h3>
+      <button class="btn-icon" onclick="closeModal('modalTestimoni')" aria-label="Tutup">
+        <span data-icon="close"></span>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p id="testiPenuhIsi" class="testi-penuh-quote"></p>
+      <div class="testimoni-meta" style="margin-top:24px">
+        <div id="testiPenuhFoto" class="testimoni-foto"></div>
+        <div>
+          <div id="testiPenuhNama" class="testimoni-nama"></div>
+          <div id="testiPenuhJabatan" class="testimoni-jabatan"></div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-foot">
+      <button type="button" class="btn btn-primary" onclick="closeModal('modalTestimoni')">Tutup</button>
+    </div>
   </div>
 </div>
 

@@ -230,6 +230,12 @@ const Api = {
    */
   kirimTestimoni:   function (data)      { return Api.post('submitTestimoni', data); },
 
+  /**
+   * Pesan dari form "Hubungi Admin" — juga publik, tanpa token.
+   * Server mencatatnya ke sheet Pesan lalu mengirim email ke admin.
+   */
+  kirimPesan:       function (data)      { return Api.post('kirimPesan', data); },
+
   /** Unggah gambar: base64 → Drive → URL publik. */
   uploadMedia: function (base64, fileName, mimeType, kategori) {
     return Api.post('uploadMedia', {

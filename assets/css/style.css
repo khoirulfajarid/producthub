@@ -310,6 +310,35 @@ a:hover { color: var(--accent-hover); }
 .hero { padding: 72px 0 0; text-align: center; }
 .hero-sub { max-width: 620px; margin: 20px auto 0; font-size: 17px; color: var(--text-secondary); }
 .hero-actions { display: flex; gap: 12px; justify-content: center; margin-top: 32px; flex-wrap: wrap; }
+.closing-actions {
+  display: flex; gap: 12px; justify-content: center; margin-top: 32px; flex-wrap: wrap;
+}
+
+/* ── HUBUNGI ADMIN ───────────────────────────────────────── */
+/* Jalur WhatsApp dibuat menonjol karena inilah yang paling cepat dibalas;
+   form email di bawahnya untuk pertanyaan yang lebih panjang. */
+.kontak-wa {
+  display: flex; align-items: center; gap: 14px;
+  padding: 16px 18px; border-radius: var(--r-md);
+  border: 1px solid var(--border); background: var(--bg-muted);
+  color: var(--text-primary); text-decoration: none;
+  transition: border-color .15s, background .15s;
+}
+.kontak-wa:hover { border-color: var(--accent); background: var(--accent-soft); }
+.kontak-wa-ikon {
+  flex: none; width: 42px; height: 42px; border-radius: var(--r-full);
+  background: var(--accent); color: #fff; display: grid; place-items: center;
+}
+.kontak-wa-teks { flex: 1 1 auto; display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.kontak-wa-teks strong { font-size: 15px; font-weight: 600; }
+.kontak-wa-teks .body-sm { color: var(--text-secondary); }
+.kontak-pisah {
+  display: flex; align-items: center; gap: 14px;
+  margin: 22px 0; color: var(--text-secondary); font-size: 13px;
+}
+.kontak-pisah::before, .kontak-pisah::after {
+  content: ""; flex: 1 1 auto; height: 1px; background: var(--border);
+}
 
 /* Panggung slideshow membentang dari tepi ke tepi layar. */
 .hero-stage {
@@ -566,18 +595,43 @@ a:hover { color: var(--accent-hover); }
   font-size: 32px; font-weight: 700; letter-spacing: -0.02em;
   color: var(--accent); margin-top: 10px;
 }
+/* Tinggi kartu ditetapkan, bukan mengikuti panjang teks — supaya satu
+   baris marquee terbaca sebagai satu deret yang rapi. Kutipan yang tidak
+   muat dipotong, dan tombol "Baca selengkapnya" membuka teks utuhnya. */
 .testimoni-card {
   background: var(--bg-surface); border: 1px solid var(--border);
   border-radius: var(--r-md); padding: 28px;
+  height: var(--testi-tinggi, 300px);
+  display: flex; flex-direction: column;
 }
-.testimoni-quote { font-size: 15px; font-style: italic; line-height: 1.7; margin: 0 0 20px; }
-.testimoni-meta  { display: flex; align-items: center; gap: 12px; }
+.testimoni-quote {
+  font-size: 15px; font-style: italic; line-height: 1.7; margin: 0 0 14px;
+  flex: 1 1 auto; min-height: 0; overflow: hidden;
+  display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 6;
+}
+.testimoni-lanjut {
+  flex: none; align-self: flex-start;
+  background: none; border: none; padding: 0; margin: 0 0 16px;
+  font-family: inherit; font-size: 13px; font-weight: 600;
+  color: var(--accent); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px;
+}
+.testimoni-lanjut:hover { opacity: .75; }
+.testimoni-lanjut:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+.testimoni-meta  { display: flex; align-items: center; gap: 12px; flex: none; margin-top: auto; }
+.testi-penuh-quote {
+  font-size: 16px; font-style: italic; line-height: 1.75; margin: 0;
+  white-space: pre-wrap;
+}
+@media (max-width: 767px) { .testimoni-card { --testi-tinggi: 320px; } }
 .testimoni-foto {
   width: 40px; height: 40px; border-radius: var(--r-full);
   background: var(--bg-muted); object-fit: cover; flex-shrink: 0;
   display: grid; place-items: center; font-size: 14px; font-weight: 600;
   color: var(--text-secondary);
 }
+.testimoni-foto.polos { background: none; padding: 0; }
+.testimoni-foto.polos > img { width: 100%; height: 100%; border-radius: var(--r-full); object-fit: cover; }
 .testimoni-nama { font-size: 14px; font-weight: 600; }
 .testimoni-jabatan { font-size: 13px; color: var(--text-secondary); }
 

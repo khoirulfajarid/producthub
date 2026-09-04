@@ -203,18 +203,36 @@ function renderLanding() {
 
   renderHeroSlideshow();
 
-  // ── CTA navbar & penutup ──
-  const navCtaLink = safeUrl(h.LinkCTAPenutup) || waLink;
+  // ── CTA utama: Lynk.id, toko, atau tautan apa pun ──
+  //
+  // Urutan yang dicari: LinkCTA (tombol utama) → LinkCTAPenutup (tombol
+  // penutup) → nomor WhatsApp. Jadi mengisi satu kolom saja sudah cukup,
+  // dan WhatsApp tetap jadi jaring pengaman bila keduanya kosong.
+  const linkUtama   = safeUrl(h.LinkCTA);
+  const linkPenutup = safeUrl(h.LinkCTAPenutup);
+  const navCtaLink  = linkUtama || linkPenutup || waLink;
+
   const navCta = document.getElementById('navCta');
   if (navCtaLink) { navCta.href = navCtaLink; } else { navCta.classList.add('hidden'); }
   if (h.TeksCTA) navCta.textContent = h.TeksCTA;
+
+  // Tombol utama di hero: menjadi tautan keluar begitu LinkCTA diisi,
+  // dan tetap menggulir ke daftar produk selama kolom itu kosong.
+  const heroCta = document.getElementById('heroCtaPrimary');
+  if (linkUtama) {
+    heroCta.href = linkUtama;
+    heroCta.target = '_blank';
+    heroCta.rel = 'noopener';
+    heroCta.onclick = function () { trackCta('hero'); return true; };
+  }
 
   if (h.JudulPenutup) document.getElementById('closingTitle').textContent = h.JudulPenutup;
   document.getElementById('closingDesc').textContent = h.DeskripsiPenutup || '';
 
   const closingCta = document.getElementById('closingCta');
+  const closingLink = linkPenutup || linkUtama || waLink;
   if (h.TeksCTAPenutup) closingCta.textContent = h.TeksCTAPenutup;
-  if (navCtaLink) { closingCta.href = navCtaLink; } else { closingCta.classList.add('hidden'); }
+  if (closingLink) { closingCta.href = closingLink; } else { closingCta.classList.add('hidden'); }
 
   renderFitur();
   renderProdukRail();
@@ -223,6 +241,7 @@ function renderLanding() {
   renderTestimoniMarquee();
   renderGaleriBukti();
   siapkanFormKirim();
+  siapkanFormKontak();
 }
 
 // ── Slideshow hero ──────────────────────────────────────────
@@ -587,8 +606,10 @@ function siapkanAnimasiStat() {
 
 function kartuTestimoni(t) {
   const foto = safeUrl(t.Foto);
-  return '<article class="testimoni-card">' +
+  return '<article class="testimoni-card" data-testi-id="' + esc(t.ID) + '">' +
     '<p class="testimoni-quote">“' + esc(t.Isi) + '”</p>' +
+    '<button type="button" class="testimoni-lanjut hidden" ' +
+      'onclick="bukaTestimoniPenuh(\'' + esc(t.ID) + '\')">Baca selengkapnya</button>' +
     '<div class="testimoni-meta">' +
       (foto
         ? '<img class="testimoni-foto" src="' + esc(foto) + '" alt="' + esc(t.Nama) + '" loading="lazy">'
@@ -633,6 +654,52 @@ function renderTestimoniMarquee() {
 
   pasangJeda(m1);
   pasangJeda(m2);
+
+  tandaiTestimoniPanjang();
+}
+
+/**
+ * Tampilkan tombol "Baca selengkapnya" HANYA pada kartu yang teksnya
+ * benar-benar terpotong.
+ *
+ * Ukurannya dibaca dari DOM, bukan ditebak dari jumlah karakter, karena
+ * lebar kartu berubah mengikuti layar dan kalimat panjang di ponsel bisa
+ * memakan baris jauh lebih banyak daripada di desktop. Pengukuran diulang
+ * setelah font selesai dimuat — sebelum itu tinggi baris masih memakai
+ * font cadangan dan hasilnya meleset.
+ */
+function tandaiTestimoniPanjang() {
+  function ukur() {
+    document.querySelectorAll('.testimoni-card').forEach(function (kartu) {
+      const kutipan = kartu.querySelector('.testimoni-quote');
+      const tombol  = kartu.querySelector('.testimoni-lanjut');
+      if (!kutipan || !tombol) return;
+      const terpotong = kutipan.scrollHeight > kutipan.clientHeight + 2;
+      tombol.classList.toggle('hidden', !terpotong);
+    });
+  }
+
+  requestAnimationFrame(ukur);
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(ukur);
+}
+
+/** Buka satu testimoni utuh di modal. */
+function bukaTestimoniPenuh(id) {
+  const t = AppState.testimoni.filter(function (x) { return String(x.ID) === String(id); })[0];
+  if (!t) return;
+
+  document.getElementById('testiPenuhIsi').textContent = '“' + String(t.Isi || '') + '”';
+  document.getElementById('testiPenuhNama').textContent = t.Nama || '';
+  document.getElementById('testiPenuhJabatan').textContent = t.Jabatan || '';
+
+  const kotakFoto = document.getElementById('testiPenuhFoto');
+  const foto = safeUrl(t.Foto);
+  kotakFoto.innerHTML = foto
+    ? '<img class="testimoni-foto" src="' + esc(foto) + '" alt="' + esc(t.Nama) + '">'
+    : esc(inisial(t.Nama));
+  kotakFoto.className = foto ? 'testimoni-foto polos' : 'testimoni-foto';
+
+  openModal('modalTestimoni');
 }
 
 // ════════════════════════════════════════════════════════════
@@ -978,6 +1045,117 @@ async function pilihBerkasKirim(input, jenis) {
     showToast('Gagal membaca berkas', err.message, 'danger');
     input.value = '';
   }
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 6b: HUBUNGI ADMIN — jalur email & WhatsApp
+// ════════════════════════════════════════════════════════════
+
+/**
+ * Siapkan modal kontak dari konfigurasi.
+ *
+ * Tombolnya baru muncul kalau ada jalur yang benar-benar bisa dipakai:
+ * nomor WhatsApp, alamat email admin, atau keduanya. Menampilkan tombol
+ * "Hubungi Admin" yang tidak menuju ke mana pun lebih buruk daripada
+ * tidak menampilkannya sama sekali.
+ */
+function siapkanFormKontak() {
+  const c = AppState.config;
+
+  const aktifRaw = String(c.kontakEnabled === undefined ? '1' : c.kontakEnabled);
+  const aktif = aktifRaw !== '0' && aktifRaw.toLowerCase() !== 'false';
+
+  const wa = String(c.waNumber || '').replace(/\D/g, '');
+  const waLink = wa ? 'https://wa.me/' + wa : '';
+  const adaEmail = !!String(c.adminEmail || '').trim();
+
+  // Tanpa WhatsApp dan tanpa email admin, tidak ada yang bisa dihubungi.
+  const bisaDipakai = aktif && (waLink || adaEmail);
+  document.querySelectorAll('[data-kontak-cta]').forEach(function (el) {
+    el.classList.toggle('hidden', !bisaDipakai);
+  });
+  if (!bisaDipakai) return;
+
+  const judul = document.getElementById('kontakJudul');
+  const sub   = document.getElementById('kontakSubjudul');
+  if (judul) judul.textContent = c.kontakJudul || 'Ada yang ingin ditanyakan?';
+  if (sub)   sub.textContent   = c.kontakSubjudul ||
+    'Kirim pesan lewat email, atau chat langsung via WhatsApp.';
+
+  // Blok WhatsApp hanya tampil bila nomornya diisi
+  const tombolWa = document.getElementById('kontakWa');
+  const pisah    = document.getElementById('kontakPisah');
+  if (waLink) {
+    tombolWa.href = waLink;
+    tombolWa.classList.remove('hidden');
+    pisah.classList.remove('hidden');
+  } else {
+    tombolWa.classList.add('hidden');
+    pisah.classList.add('hidden');
+  }
+
+  // Form email hanya berguna bila admin sudah mengisi alamatnya
+  const form = document.getElementById('kontakForm');
+  form.classList.toggle('hidden', !adaEmail);
+
+  // Tautan langsung index.html#kontak membuka modal seketika
+  if (window.location.hash === '#kontak') setTimeout(bukaFormKontak, 400);
+}
+
+/** Buka modal kontak dalam keadaan bersih. */
+function bukaFormKontak(asal) {
+  const isi    = document.getElementById('kontakIsi');
+  const sukses = document.getElementById('kontakSukses');
+  const form   = document.getElementById('kontakForm');
+
+  isi.classList.remove('hidden');
+  sukses.classList.add('hidden');
+  if (form) form.reset();
+
+  Api.track('cta', '');
+  openModal('modalKontak');
+  return false;
+}
+
+async function submitKontak(e) {
+  e.preventDefault();
+
+  const nilai = {};
+  new FormData(e.target).forEach(function (v, k) { nilai[k] = String(v).trim(); });
+
+  if (!nilai.nama || nilai.nama.length < 2) {
+    showToast('Nama belum diisi', 'Tuliskan nama Anda lebih dulu.', 'warning');
+    return;
+  }
+  if (!nilai.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(nilai.email)) {
+    showToast('Email belum benar', 'Kami perlu email yang valid untuk membalas.', 'warning');
+    return;
+  }
+  if (!nilai.pesan || nilai.pesan.length < 10) {
+    showToast('Pesan terlalu pendek',
+      'Tuliskan sedikit lebih jelas — minimal 10 karakter.', 'warning');
+    return;
+  }
+
+  const tombol = document.getElementById('kontakBtn');
+  const pulihkan = setBtnLoading(tombol, 'Mengirim…');
+
+  const res = await Api.kirimPesan({
+    nama:   nilai.nama,
+    email:  nilai.email,
+    subjek: nilai.subjek,
+    pesan:  nilai.pesan
+  });
+
+  pulihkan();
+
+  if (!res.success) {
+    showToast('Gagal mengirim', res.message, 'danger');
+    return;
+  }
+
+  document.getElementById('kontakIsi').classList.add('hidden');
+  document.getElementById('kontakSukses').classList.remove('hidden');
 }
 
 async function submitKirimTestimoni(e) {

@@ -228,6 +228,18 @@
                 </div>
               </div>
 
+              <div class="field">
+                <label for="heroInCtaLink">Link Tombol Utama (hero &amp; navbar)</label>
+                <input type="url" class="input" id="heroInCtaLink" name="LinkCTA"
+                       placeholder="https://lynk.id/namaanda">
+                <div class="hint">
+                  Tempel tautan apa pun di sini — Lynk.id, toko online, Linktree, atau
+                  halaman pembayaran. Tombol <strong>Mulai Sekarang</strong> di hero dan
+                  navbar akan mengarah ke sana. Bila dikosongkan, tombol hero kembali
+                  menggulir ke daftar produk dan navbar memakai nomor WhatsApp Anda.
+                </div>
+              </div>
+
               <hr style="border:none;border-top:1px solid var(--border);margin:28px 0">
               <h3 class="h-md" style="margin-bottom:20px">Section Penutup</h3>
               <div class="field">
@@ -246,7 +258,7 @@
                 <div class="field">
                   <label for="heroInClosingLink">Link Tombol Penutup</label>
                   <input type="url" class="input" id="heroInClosingLink" name="LinkCTAPenutup"
-                         placeholder="https://wa.me/62…">
+                         placeholder="https://lynk.id/… atau https://wa.me/62…">
                 </div>
               </div>
 
@@ -361,9 +373,40 @@
                 <label for="cfgTagline">Tagline Footer</label>
                 <input type="text" class="input" id="cfgTagline" name="tagline">
               </div>
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgWa">Nomor WhatsApp (format 62…)</label>
+                  <input type="text" class="input" id="cfgWa" name="waNumber" placeholder="6281234567890">
+                  <div class="hint">Dipakai tombol "Chat WhatsApp Admin" dan tautan di footer.</div>
+                </div>
+                <div class="field">
+                  <label for="cfgAdminEmail">Email Admin</label>
+                  <input type="email" class="input" id="cfgAdminEmail" name="adminEmail"
+                         placeholder="nama@gmail.com">
+                  <div class="hint">Tujuan pesan dari form "Hubungi Admin". Kosongkan untuk memakai email pemilik skrip.</div>
+                </div>
+              </div>
+
+              <div class="field-row">
+                <div class="field">
+                  <label for="cfgKontak">Tombol "Hubungi Admin"</label>
+                  <select class="input" id="cfgKontak" name="kontakEnabled">
+                    <option value="1">Aktif</option>
+                    <option value="0">Nonaktif</option>
+                  </select>
+                  <div class="hint">Nonaktifkan untuk menyembunyikan seluruh tombol Hubungi Admin.</div>
+                </div>
+                <div class="field">
+                  <label for="cfgKontakJudul">Judul Form Kontak</label>
+                  <input type="text" class="input" id="cfgKontakJudul" name="kontakJudul"
+                         placeholder="Ada yang ingin ditanyakan?">
+                </div>
+              </div>
+
               <div class="field">
-                <label for="cfgWa">Nomor WhatsApp (format 62…)</label>
-                <input type="text" class="input" id="cfgWa" name="waNumber" placeholder="6281234567890">
+                <label for="cfgKontakSub">Sub-judul Form Kontak</label>
+                <input type="text" class="input" id="cfgKontakSub" name="kontakSubjudul"
+                       placeholder="Kirim pesan lewat email, atau chat langsung via WhatsApp.">
               </div>
 
               <hr style="border:none;border-top:1px solid var(--border);margin:24px 0">
