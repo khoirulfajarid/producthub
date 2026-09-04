@@ -116,7 +116,7 @@ function logoutAdmin() {
     await Api.logout();
     tampilkanLayarMasuk('Anda telah keluar. Masukkan PIN untuk masuk kembali.');
     showToast('Keluar', 'Sesi admin telah diakhiri.', 'success');
-  });
+  }, { label: 'Keluar', jenis: 'danger' });
 }
 
 // ════════════════════════════════════════════════════════════
@@ -1375,7 +1375,8 @@ function setujuiPengajuanKonfirmasi(id) {
       const res = await Api.setujuiPengajuan(id);
       showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
       if (res.success) muatDataAdmin();
-    });
+    },
+    { label: 'Setujui & Tayangkan', jenis: 'primary' });
 }
 
 function tolakPengajuanKonfirmasi(id) {
@@ -1386,7 +1387,8 @@ function tolakPengajuanKonfirmasi(id) {
       const res = await Api.tolakPengajuan(id);
       showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
       if (res.success) muatDataAdmin();
-    });
+    },
+    { label: 'Tolak', jenis: 'danger' });
 }
 
 function hapusPengajuanKonfirmasi(id) {

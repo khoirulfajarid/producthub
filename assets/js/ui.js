@@ -337,15 +337,29 @@ function closeModal(id) {
   if (el) el.classList.remove('open');
 }
 
-/** Konfirmasi berbasis modal — tidak pernah memakai confirm() bawaan. */
-function konfirmasi(pesan, onYes) {
+/**
+ * Konfirmasi berbasis modal — tidak pernah memakai confirm() bawaan.
+ *
+ * @param {string}   pesan  kalimat yang dibaca pengguna
+ * @param {Function} onYes  dijalankan saat tombol aksi ditekan
+ * @param {Object}   [opsi] { label, jenis } — tulisan & warna tombol aksi.
+ *                          Default 'Hapus' + merah, karena mayoritas
+ *                          konfirmasi di panel ini memang penghapusan.
+ */
+function konfirmasi(pesan, onYes, opsi) {
   const kotak = document.getElementById('konfirmasiPesan');
   const btn = document.getElementById('konfirmasiBtn');
   if (!kotak || !btn) { if (onYes) onYes(); return; }
 
+  const label = (opsi && opsi.label) || 'Hapus';
+  const jenis = (opsi && opsi.jenis) || 'danger';
+
   kotak.textContent = pesan;
   const fresh = btn.cloneNode(true);   // buang listener lama
   btn.parentNode.replaceChild(fresh, btn);
+
+  fresh.className = 'btn btn-' + jenis;   // warna mengikuti sifat tindakan
+  fresh.textContent = label;              // tulisan mengikuti tindakan
   fresh.onclick = function () { closeModal('modalKonfirmasi'); onYes(); };
   openModal('modalKonfirmasi');
 }
