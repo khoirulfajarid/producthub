@@ -342,25 +342,49 @@ function closeModal(id) {
  *
  * @param {string}   pesan  kalimat yang dibaca pengguna
  * @param {Function} onYes  dijalankan saat tombol aksi ditekan
- * @param {Object}   [opsi] { label, jenis } — tulisan & warna tombol aksi.
- *                          Default 'Hapus' + merah, karena mayoritas
+ * @param {Object}   [opsi] { label, jenis, centang } — tulisan & warna tombol
+ *                          aksi. Default 'Hapus' + merah, karena mayoritas
  *                          konfirmasi di panel ini memang penghapusan.
+ *                          centang = { label, nilai, keterangan } menampilkan
+ *                          satu kotak centang; nilainya diteruskan ke onYes.
  */
 function konfirmasi(pesan, onYes, opsi) {
   const kotak = document.getElementById('konfirmasiPesan');
   const btn = document.getElementById('konfirmasiBtn');
-  if (!kotak || !btn) { if (onYes) onYes(); return; }
+  if (!kotak || !btn) { if (onYes) onYes(opsi && opsi.centang ? !!opsi.centang.nilai : undefined); return; }
 
   const label = (opsi && opsi.label) || 'Hapus';
   const jenis = (opsi && opsi.jenis) || 'danger';
 
   kotak.textContent = pesan;
+
+  // Kotak centang opsional — dibuat sekali, disembunyikan bila tidak dipakai
+  let wadah = document.getElementById('konfirmasiCentang');
+  if (!wadah) {
+    wadah = document.createElement('label');
+    wadah.id = 'konfirmasiCentang';
+    wadah.className = 'cek-baris konfirmasi-centang hidden';
+    wadah.innerHTML = '<input type="checkbox" id="konfirmasiCentangInput"><span></span>';
+    kotak.parentNode.appendChild(wadah);
+  }
+  const c = opsi && opsi.centang;
+  wadah.classList.toggle('hidden', !c);
+  if (c) {
+    wadah.querySelector('input').checked = c.nilai !== false;
+    wadah.querySelector('span').innerHTML = '<strong>' + esc(c.label) + '</strong>' +
+      (c.keterangan ? '<br><span class="body-sm text-secondary">' + esc(c.keterangan) + '</span>' : '');
+  }
+
   const fresh = btn.cloneNode(true);   // buang listener lama
   btn.parentNode.replaceChild(fresh, btn);
 
   fresh.className = 'btn btn-' + jenis;   // warna mengikuti sifat tindakan
   fresh.textContent = label;              // tulisan mengikuti tindakan
-  fresh.onclick = function () { closeModal('modalKonfirmasi'); onYes(); };
+  fresh.onclick = function () {
+    const dicentang = c ? wadah.querySelector('input').checked : undefined;
+    closeModal('modalKonfirmasi');
+    onYes(dicentang);
+  };
   openModal('modalKonfirmasi');
 }
 

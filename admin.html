@@ -11,11 +11,18 @@
 
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='6' fill='%23111'/><text x='16' y='23' font-family='sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'>P</text></svg>">
 
+  <!-- Buka jalur ke server lebih awal: memotong 100–300 ms dari panggilan API pertama -->
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com">
+  <link rel="preconnect" href="https://accounts.google.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 
   <link rel="stylesheet" href="assets/css/style.css">
+
+  <!-- Google Identity Services — tombol "Masuk dengan Google" -->
+  <script src="https://accounts.google.com/gsi/client" async defer></script>
 
   <script>
     (function () {
@@ -30,7 +37,7 @@
 
 <!-- ══════════════════════════════════════════════════════════
      LAYAR MASUK
-     Tampil sampai PIN ditukar dengan token sesi yang sah.
+     Tampil sampai akun Google admin ditukar dengan token sesi.
      ══════════════════════════════════════════════════════════ -->
 <div id="authScreen" class="auth-screen">
   <div class="auth-box">
@@ -42,16 +49,20 @@
 
     <div id="authInfo" class="body-sm text-secondary" style="margin-bottom:18px"></div>
 
-    <form id="pinLoginForm" onsubmit="submitPinLogin(event)">
-      <div class="field">
-        <label for="pinInput">PIN Admin</label>
-        <input type="password" class="input" id="pinInput" autocomplete="current-password"
-               required placeholder="Masukkan PIN Anda">
+    <!-- Tombol resmi Google digambar di sini oleh Google Identity Services -->
+    <div class="google-masuk">
+      <div id="googleBtn" class="google-btn-wadah" aria-live="polite">
+        <div class="google-btn-memuat"><span class="spinner spinner-sm"></span> Menyiapkan tombol Google…</div>
       </div>
-      <button type="submit" class="btn btn-primary btn-block">
-        <span data-icon="lock" data-icon-size="16"></span> Masuk
-      </button>
-    </form>
+      <div id="authProses" class="body-sm text-secondary hidden" style="text-align:center;margin-top:14px">
+        <span class="spinner spinner-sm"></span> Memeriksa akun…
+      </div>
+    </div>
+
+    <p class="auth-catatan">
+      Hanya email yang terdaftar sebagai admin yang bisa masuk.
+      Daftarnya dikelola di <strong>Pengaturan → Akses Admin</strong>.
+    </p>
 
     <div class="auth-foot">
       <a href="index.html">← Kembali ke landing page</a>
@@ -91,8 +102,12 @@
         <li><a href="#" onclick="navigateTo('pengajuan'); return false;" data-section="pengajuan">
           <span data-icon="inbox"></span> Pengajuan
           <span class="nav-badge hidden" id="badgePengajuan">0</span></a></li>
+        <li><a href="#" onclick="navigateTo('notifikasi'); return false;" data-section="notifikasi">
+          <span data-icon="send"></span> Notifikasi</a></li>
         <li><a href="#" onclick="navigateTo('laporan'); return false;" data-section="laporan">
           <span data-icon="chart"></span> Laporan</a></li>
+        <li><a href="#" onclick="navigateTo('migrasi'); return false;" data-section="migrasi">
+          <span data-icon="download"></span> Migrasi Data</a></li>
         <li><a href="#" onclick="navigateTo('pengaturan'); return false;" data-section="pengaturan">
           <span data-icon="gear"></span> Pengaturan</a></li>
       </ul>
@@ -118,7 +133,7 @@
           <h1 id="adminPageTitle" class="h-md">Dashboard</h1>
         </div>
         <div class="row-gap">
-          <span id="adminIdentity" class="body-sm text-secondary"></span>
+          <span id="adminIdentity" class="admin-identitas body-sm text-secondary"></span>
           <button class="btn-icon" onclick="toggleTheme()" aria-label="Ganti mode gelap/terang">
             <span data-theme-icon></span>
           </button>
@@ -331,6 +346,242 @@
           <div id="pengajuanList"></div>
         </section>
 
+        <!-- ═══ SECTION: NOTIFIKASI MEMBER ═══ -->
+        <section id="section-notifikasi" class="content-section">
+          <p class="body-sm text-secondary" style="margin:0 0 20px;max-width:640px">
+            Pesan otomatis ke member saat kirimannya <strong>disetujui</strong>, <strong>ditolak</strong>,
+            atau <strong>dihapus</strong> — lewat WhatsApp (Fonnte) dan email. Setiap kali Anda
+            memproses pengajuan, modal konfirmasi tetap menawarkan pilihan untuk tidak mengirim.
+          </p>
+
+          <form id="notifForm" onsubmit="submitNotifikasi(event)">
+            <div class="grid notif-grid">
+              <div class="card card-pad">
+                <div class="kanal-head">
+                  <span class="kanal-ikon" data-icon="phone" data-icon-size="18"></span>
+                  <div>
+                    <h3 class="h-md" style="margin:0">WhatsApp Gateway</h3>
+                    <div class="body-sm text-secondary">Fonnte — fonnte.com</div>
+                  </div>
+                  <span class="badge-chip" id="statusWa">—</span>
+                </div>
+                <div class="field">
+                  <label for="cfgNotifWa">Kirim notifikasi WhatsApp</label>
+                  <select class="input" id="cfgNotifWa" name="notifWaAktif">
+                    <option value="1">Aktif</option>
+                    <option value="0">Nonaktif</option>
+                  </select>
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label for="cfgFonnteToken">Token Fonnte</label>
+                  <input type="password" class="input" id="cfgFonnteToken" name="fonnteToken"
+                         autocomplete="off" placeholder="Tempel token dari dashboard Fonnte">
+                  <div class="hint" id="fonnteHint">
+                    Ambil di fonnte.com → menu <strong>Device</strong> → salin <strong>Token</strong>.
+                  </div>
+                </div>
+              </div>
+
+              <div class="card card-pad">
+                <div class="kanal-head">
+                  <span class="kanal-ikon" data-icon="mail" data-icon-size="18"></span>
+                  <div>
+                    <h3 class="h-md" style="margin:0">Email Notifikasi</h3>
+                    <div class="body-sm text-secondary">Dikirim dari akun Google pemilik skrip</div>
+                  </div>
+                  <span class="badge-chip" id="statusEmail">—</span>
+                </div>
+                <div class="field">
+                  <label for="cfgNotifEmail">Kirim notifikasi email</label>
+                  <select class="input" id="cfgNotifEmail" name="notifEmailAktif">
+                    <option value="1">Aktif</option>
+                    <option value="0">Nonaktif</option>
+                  </select>
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label for="cfgSiteUrl">Alamat situs Anda <span class="text-secondary">— penanda {situs}</span></label>
+                  <input type="url" class="input" id="cfgSiteUrl" name="siteUrl"
+                         placeholder="https://namaanda.github.io/producthub/">
+                  <div class="hint">Muncul di pesan supaya member bisa langsung melihat testimoninya.</div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card card-pad" style="margin-top:24px">
+              <div class="row-between" style="flex-wrap:wrap;margin-bottom:18px">
+                <h3 class="h-md" style="margin:0">Templat Pesan</h3>
+                <div class="tpl-tabs" role="tablist" aria-label="Jenis notifikasi">
+                  <button type="button" class="tpl-tab aktif" role="tab" data-tpl-tab="Setuju" onclick="pilihTabTemplat('Setuju')">Disetujui</button>
+                  <button type="button" class="tpl-tab" role="tab" data-tpl-tab="Tolak" onclick="pilihTabTemplat('Tolak')">Ditolak</button>
+                  <button type="button" class="tpl-tab" role="tab" data-tpl-tab="Hapus" onclick="pilihTabTemplat('Hapus')">Dihapus</button>
+                </div>
+              </div>
+
+              <div class="tpl-penanda">
+                <span class="body-sm text-secondary">Sisipkan:</span>
+                <button type="button" class="chip-penanda" onclick="sisipkanPenanda('{nama}')">{nama}</button>
+                <button type="button" class="chip-penanda" onclick="sisipkanPenanda('{jabatan}')">{jabatan}</button>
+                <button type="button" class="chip-penanda" onclick="sisipkanPenanda('{tanggal}')">{tanggal}</button>
+                <button type="button" class="chip-penanda" onclick="sisipkanPenanda('{testimoni}')">{testimoni}</button>
+                <button type="button" class="chip-penanda" onclick="sisipkanPenanda('{brand}')">{brand}</button>
+                <button type="button" class="chip-penanda" onclick="sisipkanPenanda('{situs}')">{situs}</button>
+              </div>
+
+              <div class="tpl-panel" data-tpl-panel="Setuju">
+                <p class="body-sm text-secondary" style="margin:0 0 16px">Terkirim saat Anda menekan <strong>Setujui &amp; Tayangkan</strong>.</p>
+                <div class="field">
+                  <label for="tplSetujuWa">Pesan WhatsApp</label>
+                  <textarea class="input tpl-isi" id="tplSetujuWa" name="tplSetujuWa" rows="7"></textarea>
+                  <div class="hint">Pakai <code>*tebal*</code> dan <code>_miring_</code> seperti mengetik di WhatsApp.</div>
+                </div>
+                <div class="field">
+                  <label for="tplSetujuEmailSubjek">Subjek Email</label>
+                  <input type="text" class="input tpl-isi" id="tplSetujuEmailSubjek" name="tplSetujuEmailSubjek">
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label for="tplSetujuEmail">Isi Email</label>
+                  <textarea class="input tpl-isi" id="tplSetujuEmail" name="tplSetujuEmail" rows="9"></textarea>
+                </div>
+              </div>
+              <div class="tpl-panel" data-tpl-panel="Tolak" hidden>
+                <p class="body-sm text-secondary" style="margin:0 0 16px">Terkirim saat Anda menekan <strong>Tolak</strong>. Ajak member mengirim ulang dengan bukti yang lebih jelas.</p>
+                <div class="field">
+                  <label for="tplTolakWa">Pesan WhatsApp</label>
+                  <textarea class="input tpl-isi" id="tplTolakWa" name="tplTolakWa" rows="7"></textarea>
+                  <div class="hint">Pakai <code>*tebal*</code> dan <code>_miring_</code> seperti mengetik di WhatsApp.</div>
+                </div>
+                <div class="field">
+                  <label for="tplTolakEmailSubjek">Subjek Email</label>
+                  <input type="text" class="input tpl-isi" id="tplTolakEmailSubjek" name="tplTolakEmailSubjek">
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label for="tplTolakEmail">Isi Email</label>
+                  <textarea class="input tpl-isi" id="tplTolakEmail" name="tplTolakEmail" rows="9"></textarea>
+                </div>
+              </div>
+              <div class="tpl-panel" data-tpl-panel="Hapus" hidden>
+                <p class="body-sm text-secondary" style="margin:0 0 16px">Terkirim saat Anda menghapus kiriman — kecuali Anda melepas centang notifikasi (misalnya untuk kiriman spam).</p>
+                <div class="field">
+                  <label for="tplHapusWa">Pesan WhatsApp</label>
+                  <textarea class="input tpl-isi" id="tplHapusWa" name="tplHapusWa" rows="7"></textarea>
+                  <div class="hint">Pakai <code>*tebal*</code> dan <code>_miring_</code> seperti mengetik di WhatsApp.</div>
+                </div>
+                <div class="field">
+                  <label for="tplHapusEmailSubjek">Subjek Email</label>
+                  <input type="text" class="input tpl-isi" id="tplHapusEmailSubjek" name="tplHapusEmailSubjek">
+                </div>
+                <div class="field" style="margin-bottom:0">
+                  <label for="tplHapusEmail">Isi Email</label>
+                  <textarea class="input tpl-isi" id="tplHapusEmail" name="tplHapusEmail" rows="9"></textarea>
+                </div>
+              </div>
+
+              <div class="uji-kirim">
+                <div class="label-md" style="margin-bottom:10px">Uji kirim templat yang sedang dibuka</div>
+                <div class="uji-baris">
+                  <select class="input" id="ujiKanal" aria-label="Kanal uji" onchange="gantiKanalUji()">
+                    <option value="wa">WhatsApp</option>
+                    <option value="email">Email</option>
+                  </select>
+                  <input type="text" class="input" id="ujiTujuan" placeholder="081234567890" aria-label="Tujuan uji">
+                  <button type="button" class="btn btn-secondary" onclick="kirimUjiNotifikasi(this)">
+                    <span data-icon="send" data-icon-size="16"></span> Kirim Uji
+                  </button>
+                </div>
+                <div class="hint" style="margin-top:8px">
+                  Uji kirim tetap jalan walau saklarnya masih nonaktif, dan memakai isi kolom di atas
+                  meski belum disimpan — cocok untuk mencoba sebelum menyalakan.
+                </div>
+              </div>
+            </div>
+
+            <div class="simpan-lengket">
+              <button type="submit" class="btn btn-primary">Simpan Notifikasi</button>
+            </div>
+          </form>
+
+          <div class="card" style="margin-top:24px">
+            <div class="card-pad row-between" style="padding-bottom:0">
+              <h3 class="h-md" style="margin:0">Riwayat Pengiriman</h3>
+              <span class="body-sm text-secondary">40 terakhir · sheet <code>LogNotifikasi</code></span>
+            </div>
+            <div class="table-wrap" id="logNotifWrap" style="margin-top:16px"></div>
+          </div>
+        </section>
+
+        <!-- ═══ SECTION: MIGRASI DATA ═══ -->
+        <section id="section-migrasi" class="content-section">
+          <div class="grid migrasi-grid">
+            <div class="card card-pad">
+              <h3 class="h-md" style="margin-bottom:8px">Import dari App Lama</h3>
+              <p class="body-sm text-secondary" style="margin-bottom:20px">
+                Pindahkan isi ProductHub versi lama ke instalasi ini. Spreadsheet lama
+                <strong>hanya dibaca</strong> — tidak ada satu sel pun yang diubah — jadi app lama tetap
+                bisa berjalan selama masa transisi.
+              </p>
+
+              <div class="field">
+                <label for="impSumber">URL atau ID spreadsheet app lama</label>
+                <input type="text" class="input" id="impSumber"
+                       placeholder="https://docs.google.com/spreadsheets/d/…/edit">
+                <div class="hint">Harus bisa dibuka oleh akun Google pemilik skrip ini.</div>
+              </div>
+
+              <div class="field">
+                <label>Data yang dipindahkan</label>
+                <div class="imp-sheets" id="impSheets"></div>
+              </div>
+
+              <div class="field">
+                <label class="cek-baris">
+                  <input type="checkbox" id="impBuangContoh" checked>
+                  <span><strong>Buang data contoh bawaan setup</strong><br>
+                  <span class="body-sm text-secondary">Produk, keunggulan, dan testimoni contoh di app ini dihapus supaya tidak bercampur dengan data asli.</span></span>
+                </label>
+                <label class="cek-baris" style="margin-top:10px">
+                  <input type="checkbox" id="impTimpa">
+                  <span><strong>Timpa data yang sudah ada</strong><br>
+                  <span class="body-sm text-secondary">Biarkan mati kecuali Anda sengaja ingin isi app lama menang atas perubahan di app ini.</span></span>
+                </label>
+              </div>
+
+              <div class="row-gap" style="gap:10px;flex-wrap:wrap">
+                <button type="button" class="btn btn-secondary" onclick="jalankanImport(true, this)">
+                  <span data-icon="eye" data-icon-size="16"></span> Pindai (tanpa menulis)
+                </button>
+                <button type="button" class="btn btn-primary" id="impJalankanBtn" onclick="jalankanImport(false, this)" disabled>
+                  <span data-icon="download" data-icon-size="16"></span> Jalankan Import
+                </button>
+              </div>
+              <div class="hint" id="impHint" style="margin-top:10px">Pindai dulu — tombol Jalankan Import aktif setelah hasil pindai tampil.</div>
+            </div>
+
+            <div class="card card-pad">
+              <h3 class="h-md" style="margin-bottom:12px">Urutan Pindah yang Aman</h3>
+              <ol class="langkah-migrasi">
+                <li><strong>Pindai</strong> — lihat berapa yang akan ditambah, tanpa menulis apa pun.</li>
+                <li><strong>Jalankan Import</strong>, lalu periksa produk, testimoni, gambar, dan pengaturan.</li>
+                <li>Uji dengan satu kiriman testimoni sungguhan dari HP Anda.</li>
+                <li>Tepat sebelum pindah alamat, <strong>jalankan import sekali lagi</strong> — kiriman yang
+                    masuk ke app lama selama transisi ikut terbawa, tanpa ada yang dobel.</li>
+                <li>Ganti <code>GAS_URL</code> di situs ke app ini. Deployment lama cukup diarsipkan.</li>
+              </ol>
+              <div class="insight-panel" style="margin-top:16px">
+                <div class="label-md">Yang tidak ikut pindah</div>
+                <ul>
+                  <li>Sesi login — cukup masuk ulang dengan Google.</li>
+                  <li>PIN lama — sejak v4 login memakai akun Google.</li>
+                  <li>Berkas gambar tidak disalin; tautannya dipakai ulang, jadi gambar tetap tampil
+                      selama berkas aslinya di Google Drive tidak dihapus.</li>
+                </ul>
+              </div>
+              <div class="body-sm text-secondary" id="impTerakhir" style="margin-top:14px"></div>
+            </div>
+          </div>
+
+          <div id="impHasil" style="margin-top:24px"></div>
+        </section>
+
         <!-- ═══ SECTION: LAPORAN ═══ -->
         <section id="section-laporan" class="content-section">
           <div class="row-between" style="margin-bottom:20px">
@@ -533,28 +784,32 @@
           </div>
 
           <div class="card card-pad" style="max-width:640px;margin-top:24px">
-            <h3 class="h-md" style="margin-bottom:8px">Keamanan Dashboard</h3>
+            <h3 class="h-md" style="margin-bottom:8px">Akses Admin (Google)</h3>
             <p class="body-sm text-secondary" style="margin-bottom:20px">
-              PIN adalah satu-satunya jalur masuk ke dashboard. Karena frontend berada di
-              domain terpisah, identitas akun Google tidak terbaca oleh server —
-              login berbasis email tidak lagi tersedia.
-              Setelah PIN diganti, sesi yang sedang berjalan di perangkat lain tetap
-              berlaku sampai masa 6 jam-nya habis.
+              Dashboard hanya bisa dibuka dengan tombol <strong>Masuk dengan Google</strong>, dan hanya
+              oleh email di daftar ini. Email yang dicoret langsung kehilangan akses —
+              termasuk sesi yang sedang terbuka di perangkat lain.
             </p>
-            <form id="pinForm" onsubmit="submitPinChange(event)">
+            <form id="aksesForm" onsubmit="submitAkses(event)">
               <div class="field">
-                <label for="cfgPinBaru">PIN Admin Baru</label>
-                <input type="password" class="input" id="cfgPinBaru" minlength="6"
-                       placeholder="Minimal 6 karakter" autocomplete="new-password">
-                <div class="hint">Gunakan kombinasi yang tidak mudah ditebak.</div>
+                <label for="cfgAdminEmails">Email yang boleh masuk</label>
+                <textarea class="input" id="cfgAdminEmails" name="adminEmails" rows="3"
+                          placeholder="nama@gmail.com, rekan@gmail.com"></textarea>
+                <div class="hint">
+                  Pisahkan dengan koma atau baris baru. Email Anda sendiri
+                  (<strong id="aksesEmailSaya">—</strong>) wajib tetap ada di daftar.
+                </div>
               </div>
-              <div class="field">
-                <label for="cfgPinUlang">Ulangi PIN Baru</label>
-                <input type="password" class="input" id="cfgPinUlang" minlength="6"
-                       placeholder="Ketik ulang PIN" autocomplete="new-password">
-              </div>
-              <button type="submit" class="btn btn-primary">Ganti PIN</button>
+              <button type="submit" class="btn btn-primary">Simpan Daftar Admin</button>
             </form>
+            <div class="insight-panel" style="margin-top:20px">
+              <div class="label-md">Kalau suatu saat terkunci</div>
+              <ul>
+                <li>Buka spreadsheet database di Google Sheets → sheet <code>AppConfig</code>.</li>
+                <li>Edit baris <code>adminEmails</code>, lalu jalankan <code>resetCache()</code> di editor Apps Script.</li>
+                <li>Client ID Google ada di baris <code>googleClientId</code> — sengaja tidak bisa diubah dari dashboard.</li>
+              </ul>
+            </div>
           </div>
 
           <div class="card card-pad" style="max-width:640px;margin-top:24px">

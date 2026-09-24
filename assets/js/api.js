@@ -51,14 +51,14 @@ const Api = {
    * Bungkus fetch dengan batas waktu, supaya antarmuka tidak
    * menggantung selamanya bila jaringan bermasalah.
    */
-  _fetchTimeout: function (url, opsi) {
+  _fetchTimeout: function (url, opsi, batasMs) {
     const kontrol = typeof AbortController !== 'undefined' ? new AbortController() : null;
     const pilihan = Object.assign({}, opsi || {});
     if (kontrol) pilihan.signal = kontrol.signal;
 
     const jam = setTimeout(function () {
       if (kontrol) kontrol.abort();
-    }, APP_CONFIG.TIMEOUT);
+    }, batasMs || APP_CONFIG.TIMEOUT);
 
     return fetch(url, pilihan).then(
       function (res) { clearTimeout(jam); return res; },
@@ -109,7 +109,7 @@ const Api = {
    * @param {string} action nama action di doPost
    * @param {Object} data payload
    */
-  post: async function (action, data) {
+  post: async function (action, data, batasMs) {
     if (!konfigurasiSiap()) {
       return {
         success: false,
@@ -129,7 +129,7 @@ const Api = {
           token: Api.getToken(),
           data: data || {}
         })
-      });
+      }, batasMs);
 
       if (!res.ok) throw new Error('Server membalas kode ' + res.status + '.');
 
@@ -186,9 +186,12 @@ const Api = {
     Api.kirimDiamDiam('track', { tipe: tipe, id: produkId || '' });
   },
 
-  /** Tukar PIN dengan token sesi. */
-  login: async function (pin) {
-    const res = await Api.post('login', { pin: pin });
+  /** Client ID Google untuk tombol masuk (publik, bukan rahasia). */
+  authConfig: function () { return Api.get('authConfig'); },
+
+  /** Tukar ID token Google (JWT) dengan token sesi dashboard. */
+  loginGoogle: async function (credential) {
+    const res = await Api.post('loginGoogle', { credential: credential });
     if (res.success && res.data && res.data.token) Api.setToken(res.data.token);
     return res;
   },
@@ -218,8 +221,15 @@ const Api = {
   setujuiPengajuan: function (id, edit)  {
     return Api.post('approvePengajuan', Object.assign({ id: id }, edit || {}));
   },
-  tolakPengajuan:   function (id)        { return Api.post('rejectPengajuan', { id: id }); },
-  hapusPengajuan:   function (id)        { return Api.post('deletePengajuan', { id: id }); },
+  tolakPengajuan:   function (id, notify) { return Api.post('rejectPengajuan', { id: id, notify: notify !== false }); },
+  hapusPengajuan:   function (id, notify) { return Api.post('deletePengajuan', { id: id, notify: notify !== false }); },
+
+  // ── Notifikasi member (v4) ──
+  kirimUlangNotif:  function (id)        { return Api.post('kirimUlangNotif', { id: id }); },
+  ujiNotifikasi:    function (data)      { return Api.post('testNotifikasi', data); },
+
+  // ── Migrasi: import bisa lama untuk data besar — beri 5 menit ──
+  importData:       function (data)      { return Api.post('importData', data, 300000); },
 
   /**
    * Kiriman testimoni dari member — endpoint publik, tanpa token.

@@ -3,14 +3,19 @@
  * ProductHub Creator — Logika Dashboard Admin
  * ============================================================
  *
- * Autentikasi:
- *   PIN → Api.login() → token sesi disimpan di sessionStorage.
- *   Setiap operasi tulis membawa token, bukan PIN. Bila server
- *   menolak token (kedaluwarsa), Api memanggil onSessionExpired
+ * Autentikasi (v4):
+ *   Tombol "Masuk dengan Google" → ID token → Api.loginGoogle() →
+ *   token sesi disimpan di sessionStorage. Server memverifikasi token
+ *   ke Google dan mencocokkan email dengan daftar admin. Bila server
+ *   menolak token (kedaluwarsa/dicabut), Api memanggil onSessionExpired
  *   dan pengguna dikembalikan ke layar masuk.
  *
- * Navigasi antar section tetap 0 ms — seluruh section sudah ada
- * di DOM, berpindah hanya menyalakan/mematikan kelas .active.
+ * Kecepatan:
+ *   - Navigasi antar section 0 ms — semua section sudah ada di DOM.
+ *   - Data dashboard terakhir disimpan di sessionStorage: refresh
+ *     halaman langsung tampil, lalu diperbarui diam-diam di latar.
+ *   - Setujui/tolak/hapus pengajuan langsung terlihat (optimistic UI);
+ *     bila server gagal, tampilan dikembalikan seperti semula.
  * ============================================================
  */
 
@@ -22,8 +27,15 @@ const AdminState = {
   data: null,           // seluruh data dashboard dari server
   produkFilter: '',     // kata kunci pencarian lokal
   editorSlides: [],     // daftar slide hero yang sedang diedit
-  charts: {}            // instance Chart.js aktif
+  charts: {},           // instance Chart.js aktif
+  tabTpl: 'Setuju',     // tab templat notifikasi yang sedang dibuka
+  kolomTplTerakhir: null, // kolom templat terakhir yang difokus (untuk sisip penanda)
+  pindaiSumber: ''      // sumber yang terakhir dipindai — syarat tombol Jalankan Import
 };
+
+const KUNCI_CACHE_ADMIN = 'ph_admin_cache';
+const KUNCI_PROFIL      = 'ph_admin_profil';
+const KUNCI_CLIENT_ID   = 'ph_google_client';
 
 // ════════════════════════════════════════════════════════════
 // BAGIAN 2: INISIALISASI
@@ -40,8 +52,13 @@ document.addEventListener('DOMContentLoaded', function () {
 
   // Dipanggil Api ketika server menolak token
   Api.onSessionExpired = function (pesan) {
+    bersihkanDataLokal();
     tampilkanLayarMasuk(pesan || 'Sesi berakhir. Silakan masuk kembali.');
   };
+
+  pasangPelacakKolomTemplat();
+  pasangPenandaFormKotor();
+  renderPilihanImport();
 
   window.addEventListener('resize', syncLayout);
   syncLayout();
@@ -52,7 +69,7 @@ document.addEventListener('DOMContentLoaded', function () {
   } else {
     tampilkanLayarMasuk(
       konfigurasiSiap()
-        ? 'Masukkan PIN admin untuk membuka dashboard.'
+        ? 'Masuk dengan akun Google yang terdaftar sebagai admin.'
         : '⚠️ GAS_URL belum diisi. Buka assets/js/config.js dan tempel URL /exec deployment Anda.'
     );
   }
@@ -77,44 +94,165 @@ function tampilkanLayarMasuk(pesan) {
   document.getElementById('adminApp').classList.remove('active');
   document.getElementById('authScreen').style.display = 'flex';
   document.getElementById('authInfo').textContent = pesan || '';
+  document.getElementById('authProses').classList.add('hidden');
+  tampilkanGalatMasuk('');
 
   AdminState.data = null;
-  const input = document.getElementById('pinInput');
-  if (input) { input.value = ''; setTimeout(function () { input.focus(); }, 80); }
+  if (konfigurasiSiap()) siapkanTombolGoogle();
 }
 
-async function submitPinLogin(e) {
-  e.preventDefault();
+function tampilkanGalatMasuk(pesan) {
+  let el = document.getElementById('authGalat');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'authGalat';
+    el.className = 'auth-galat hidden';
+    el.setAttribute('role', 'alert');
+    document.querySelector('.google-masuk').appendChild(el);
+  }
+  el.textContent = pesan || '';
+  el.classList.toggle('hidden', !pesan);
+}
 
-  const pin = document.getElementById('pinInput').value;
-  const btn = e.target.querySelector('button[type="submit"]');
-  const pulih = setBtnLoading(btn, 'Memeriksa…');
+/** Tunggu pustaka Google Identity Services selesai dimuat (skripnya async). */
+function tungguGoogle(batasMs) {
+  return new Promise(function (selesai, gagal) {
+    const mulai = Date.now();
+    (function cek() {
+      if (window.google && google.accounts && google.accounts.id) return selesai();
+      if (Date.now() - mulai > batasMs) return gagal(new Error('timeout'));
+      setTimeout(cek, 60);
+    })();
+  });
+}
 
-  const res = await Api.login(pin);
-  pulih();
+/**
+ * Siapkan tombol Google secepat mungkin.
+ *
+ * Client ID terakhir disimpan di localStorage, jadi pada kunjungan kedua
+ * tombol langsung tergambar tanpa menunggu Apps Script bangun (yang bisa
+ * 1–3 detik). Nilai dari server tetap dicek di latar, dan tombol digambar
+ * ulang hanya bila Client ID-nya ternyata berubah.
+ */
+async function siapkanTombolGoogle() {
+  let tersimpan = '';
+  try { tersimpan = localStorage.getItem(KUNCI_CLIENT_ID) || ''; } catch (e) {}
+  if (tersimpan) pasangTombolGoogle(tersimpan);
 
+  const res = await Api.authConfig();
   if (!res.success) {
-    showToast('Gagal masuk', res.message, 'danger');
-    document.getElementById('pinInput').select();
+    if (!tersimpan) tampilkanGalatMasuk(res.message);
     return;
   }
 
-  document.getElementById('pinInput').value = '';
+  const dariServer = (res.data && res.data.googleClientId) || '';
+  if (!dariServer) {
+    try { localStorage.removeItem(KUNCI_CLIENT_ID); } catch (e) {}
+    document.getElementById('googleBtn').innerHTML = '';
+    tampilkanGalatMasuk('Login Google belum dikonfigurasi. Isi GOOGLE_CLIENT_ID di Kode.gs, ' +
+      'jalankan upgradeKeV4() di editor Apps Script, lalu Deploy → New version.');
+    return;
+  }
+
+  try { localStorage.setItem(KUNCI_CLIENT_ID, dariServer); } catch (e) {}
+  if (dariServer !== tersimpan) pasangTombolGoogle(dariServer);
+}
+
+async function pasangTombolGoogle(clientId) {
+  try {
+    await tungguGoogle(12000);
+  } catch (e) {
+    tampilkanGalatMasuk('Tombol Google tidak termuat. Periksa koneksi internet, atau matikan ' +
+      'pemblokir iklan/skrip untuk situs ini, lalu muat ulang halaman.');
+    return;
+  }
+
+  google.accounts.id.initialize({
+    client_id: clientId,
+    callback: terimaKredensialGoogle,
+    auto_select: false,
+    cancel_on_tap_outside: true,
+    ux_mode: 'popup'
+  });
+
+  const wadah = document.getElementById('googleBtn');
+  wadah.innerHTML = '';
+  const gelap = document.documentElement.getAttribute('data-theme') === 'dark';
+  google.accounts.id.renderButton(wadah, {
+    type: 'standard', size: 'large', text: 'signin_with', shape: 'rectangular',
+    theme: gelap ? 'filled_black' : 'outline', logo_alignment: 'left',
+    width: Math.min(320, wadah.clientWidth || 320), locale: 'id'
+  });
+}
+
+/** Dipanggil Google setelah admin memilih akunnya. */
+async function terimaKredensialGoogle(balasan) {
+  const proses = document.getElementById('authProses');
+  proses.classList.remove('hidden');
+  tampilkanGalatMasuk('');
+
+  const res = await Api.loginGoogle(balasan && balasan.credential);
+  proses.classList.add('hidden');
+
+  if (!res.success) {
+    tampilkanGalatMasuk(res.message);
+    return;
+  }
+
+  try {
+    sessionStorage.setItem(KUNCI_PROFIL, JSON.stringify({
+      email: res.data.email, nama: res.data.nama, foto: res.data.foto
+    }));
+  } catch (e) {}
+
+  showToast('Berhasil masuk', res.message, 'success');
   masukDashboard();
+}
+
+function tampilkanIdentitas() {
+  let profil = null;
+  try { profil = JSON.parse(sessionStorage.getItem(KUNCI_PROFIL) || 'null'); } catch (e) {}
+  const el = document.getElementById('adminIdentity');
+  if (!profil || !profil.email) { el.textContent = 'Sesi admin aktif'; return; }
+  const foto = safeUrl(profil.foto);
+  el.innerHTML = (foto ? '<img src="' + esc(foto) + '" alt="" referrerpolicy="no-referrer">' : '') +
+    '<span class="teks">' + esc(profil.email) + '</span>';
+  el.title = (profil.nama ? profil.nama + ' — ' : '') + profil.email;
 }
 
 function masukDashboard() {
   document.getElementById('authScreen').style.display = 'none';
   document.getElementById('adminApp').classList.add('active');
   window.scrollTo(0, 0);
-  document.getElementById('adminIdentity').textContent = 'Sesi admin aktif';
+  tampilkanIdentitas();
+
+  // Buka lagi section terakhir (dari #hash) — refresh tidak melempar ke Dashboard
+  const hash = (location.hash || '').replace('#', '');
+  if (hash && JUDUL_SECTION[hash]) navigateTo(hash);
+
+  // Tampilkan data terakhir SEKETIKA, lalu perbarui diam-diam di latar
+  let cache = null;
+  try { cache = JSON.parse(sessionStorage.getItem(KUNCI_CACHE_ADMIN) || 'null'); } catch (e) {}
+  if (cache) {
+    AdminState.data = cache;
+    renderSemuaAdmin();
+  }
   muatDataAdmin();
+}
+
+function bersihkanDataLokal() {
+  try {
+    sessionStorage.removeItem(KUNCI_CACHE_ADMIN);
+    sessionStorage.removeItem(KUNCI_PROFIL);
+  } catch (e) {}
 }
 
 function logoutAdmin() {
   konfirmasi('Keluar dari panel admin?', async function () {
     await Api.logout();
-    tampilkanLayarMasuk('Anda telah keluar. Masukkan PIN untuk masuk kembali.');
+    bersihkanDataLokal();
+    try { if (window.google && google.accounts && google.accounts.id) google.accounts.id.disableAutoSelect(); } catch (e) {}
+    tampilkanLayarMasuk('Anda telah keluar. Masuk lagi dengan akun Google Anda.');
     showToast('Keluar', 'Sesi admin telah diakhiri.', 'success');
   }, { label: 'Keluar', jenis: 'danger' });
 }
@@ -131,6 +269,8 @@ const JUDUL_SECTION = {
   testimoni:  'Testimoni',
   galeri:     'Bukti Nyata',
   pengajuan:  'Pengajuan Member',
+  notifikasi: 'Notifikasi Member',
+  migrasi:    'Migrasi Data',
   laporan:    'Laporan & Analytics',
   pengaturan: 'Pengaturan'
 };
@@ -148,6 +288,13 @@ function navigateTo(sectionId) {
 
   document.getElementById('adminPageTitle').textContent = JUDUL_SECTION[sectionId] || 'Dashboard';
   closeSidebar();
+
+  // Ingat section di alamat — refresh kembali ke tempat yang sama.
+  // replaceState: tidak menumpuk riwayat, tombol Back tetap wajar.
+  try { history.replaceState(null, '', '#' + sectionId); } catch (e) {}
+  const konten = document.querySelector('.admin-body');
+  if (konten) konten.scrollTop = 0;
+  window.scrollTo(0, 0);
 
   // Chart hanya dibuat saat sectionnya benar-benar terlihat
   if (sectionId === 'dashboard') renderChart7Hari();
@@ -169,8 +316,13 @@ function closeSidebar() {
 // ════════════════════════════════════════════════════════════
 
 async function muatDataAdmin() {
-  document.getElementById('kpiGrid').innerHTML =
-    '<div class="skeleton" style="height:104px"></div>'.repeat(4);
+  // Kerangka abu-abu hanya saat benar-benar belum ada apa pun untuk
+  // ditampilkan. Pembaruan sesudah menyimpan berjalan diam-diam —
+  // layar tidak lagi berkedip setiap kali Anda menekan Simpan.
+  if (!AdminState.data) {
+    document.getElementById('kpiGrid').innerHTML =
+      '<div class="skeleton" style="height:104px"></div>'.repeat(4);
+  }
 
   const res = await Api.adminData();
 
@@ -182,10 +334,36 @@ async function muatDataAdmin() {
     return;
   }
 
+  // Jangan timpa isian yang sedang diketik admin: bila ada form yang
+  // sedang difokus, render ulang form ditunda sampai berikutnya.
+  const lamaAda = !!AdminState.data;
   AdminState.data = res.data;
+  try { sessionStorage.setItem(KUNCI_CACHE_ADMIN, JSON.stringify(res.data)); } catch (e) {}
 
-  const brand = (res.data.config && res.data.config.appName) || APP_CONFIG.BRAND_DEFAULT;
+  renderSemuaAdmin({ lewatiFormAktif: lamaAda });
+  if (!lamaAda || !AdminState.sudahDiingatkan) ingatkanMigrasi();
+  AdminState.sudahDiingatkan = true;
+}
+
+/**
+ * Gambar ulang seluruh dashboard dari AdminState.data.
+ * @param {Object} [opsi] lewatiFormAktif: jangan isi ulang form yang
+ *                        sedang dipakai (fokus ada di dalamnya).
+ */
+function renderSemuaAdmin(opsi) {
+  const o = opsi || {};
+  const d = AdminState.data;
+  if (!d) return;
+
+  const brand = (d.config && d.config.appName) || APP_CONFIG.BRAND_DEFAULT;
   document.getElementById('sidebarBrand').textContent = brand;
+
+  // Form yang sedang difokus ATAU punya isian belum tersimpan tidak
+  // diisi ulang — pembaruan diam-diam tidak boleh menghapus ketikan admin.
+  const sedangDiisi = function (formId) {
+    const f = document.getElementById(formId);
+    return o.lewatiFormAktif && f && (f.contains(document.activeElement) || f.dataset.kotor === '1');
+  };
 
   renderDashboard();
   renderProdukTable();
@@ -193,10 +371,13 @@ async function muatDataAdmin() {
   renderTestimoniTable();
   renderGaleriAdmin();
   renderPengajuan();
-  isiFormHero();
-  isiFormKonfigurasi();
+  if (!sedangDiisi('heroForm'))   isiFormHero();
+  if (!sedangDiisi('configForm')) isiFormKonfigurasi();
+  if (!sedangDiisi('aksesForm'))  isiFormAkses();
+  if (!sedangDiisi('notifForm'))  isiFormNotifikasi();
+  renderLogNotif();
+  renderImportTerakhir();
   renderLaporan();
-  ingatkanMigrasi();
 }
 
 /**
@@ -209,6 +390,14 @@ function ingatkanMigrasi() {
     showToast('Database perlu diperbarui',
       'Jalankan fungsi upgradeKeV3() sekali di editor Apps Script agar modul ' +
       'Bukti Nyata dan Pengajuan bisa dipakai.', 'warning');
+    return;
+  }
+
+  // Sheet LogNotifikasi & pengaturan notifikasi datang bersama v4
+  if (AdminState.data.siapV4 === false) {
+    showToast('Satu langkah lagi',
+      'Jalankan fungsi upgradeKeV4() sekali di editor Apps Script agar menu ' +
+      'Notifikasi dan riwayat pengirimannya bisa dipakai.', 'warning');
     return;
   }
 
@@ -986,38 +1175,6 @@ async function submitConfig(e) {
   if (res.success) muatDataAdmin();
 }
 
-async function submitPinChange(e) {
-  e.preventDefault();
-
-  const pinBaru = document.getElementById('cfgPinBaru').value.trim();
-  const ulang   = document.getElementById('cfgPinUlang').value.trim();
-
-  if (!pinBaru) {
-    showToast('Belum diisi', 'Masukkan PIN baru terlebih dahulu.', 'warning');
-    return;
-  }
-  if (pinBaru.length < 6) {
-    showToast('Terlalu pendek', 'PIN minimal 6 karakter.', 'warning');
-    return;
-  }
-  if (pinBaru !== ulang) {
-    showToast('Tidak cocok', 'Kedua kolom PIN harus sama persis.', 'warning');
-    return;
-  }
-
-  const btn = e.target.querySelector('button[type="submit"]');
-  const pulih = setBtnLoading(btn);
-
-  const res = await Api.simpanKonfigurasi({ adminPin: pinBaru });
-  pulih();
-
-  if (!res.success) { showToast('Gagal', res.message, 'danger'); return; }
-
-  document.getElementById('cfgPinBaru').value = '';
-  document.getElementById('cfgPinUlang').value = '';
-  showToast('Berhasil', 'PIN telah diganti. Gunakan PIN baru saat masuk berikutnya.', 'success');
-}
-
 /** Diagnostik: pastikan frontend benar-benar tersambung ke backend. */
 async function cekKoneksi(btn) {
   const pulih = setBtnLoading(btn, 'Menguji…');
@@ -1372,6 +1529,11 @@ function kartuPengajuan(p) {
             '<button class="btn btn-secondary btn-sm" onclick="tolakPengajuanKonfirmasi(\'' + id + '\')">' +
               icon('xCircle', 16) + ' Tolak</button>'
           : '') +
+        (!baru && kanalNotifAktif().length && (p.NoHP || p.Email) &&
+         (String(p.Status) === 'Disetujui' || String(p.Status) === 'Ditolak')
+          ? '<button class="btn btn-secondary btn-sm" onclick="kirimUlangNotif(\'' + id + '\', this)">' +
+              icon('send', 16) + ' Kirim ulang notifikasi</button>'
+          : '') +
         '<button class="btn btn-ghost btn-sm" onclick="hapusPengajuanKonfirmasi(\'' + id + '\')">' +
           icon('trash', 16) + ' Hapus</button>' +
       '</div>' +
@@ -1379,37 +1541,495 @@ function kartuPengajuan(p) {
   '</div>';
 }
 
+/** Kanal notifikasi yang benar-benar siap dipakai saat ini. */
+function kanalNotifAktif() {
+  const c = (AdminState.data && AdminState.data.config) || {};
+  const nyala = function (v) { return String(v) === '1' || String(v).toLowerCase() === 'true'; };
+  const kanal = [];
+  if (nyala(c.notifWaAktif) && c.fonnteTokenTersimpan) kanal.push('wa');
+  if (nyala(c.notifEmailAktif)) kanal.push('email');
+  return kanal;
+}
+
+/**
+ * Kotak centang "Kirim notifikasi" untuk modal konfirmasi.
+ * null = tidak ditampilkan (kanal mati semua, atau member tidak
+ * meninggalkan kontak apa pun di kanal yang aktif).
+ */
+function opsiCentangNotif(p, bawaan) {
+  if (!p) return null;
+  const kanal = kanalNotifAktif();
+  const tujuan = [];
+  if (kanal.indexOf('wa') !== -1 && String(p.NoHP || '').replace(/\D/g, '').length >= 9) {
+    tujuan.push('WhatsApp ' + String(p.NoHP));
+  }
+  if (kanal.indexOf('email') !== -1 && /@/.test(String(p.Email || ''))) {
+    tujuan.push('email ' + p.Email);
+  }
+  if (!tujuan.length) return null;
+  return { label: 'Kirim notifikasi ke ' + (p.Nama || 'member'), nilai: bawaan !== false,
+           keterangan: 'Lewat ' + tujuan.join(' dan ') + '.' };
+}
+
+function cariPengajuanLokal(id) {
+  return ((AdminState.data && AdminState.data.pengajuan) || [])
+    .filter(function (x) { return String(x.ID) === String(id); })[0] || null;
+}
+
+/**
+ * Optimistic UI untuk tiga aksi pengajuan.
+ *
+ * Kartu langsung pindah/hilang begitu tombol ditekan; permintaan ke server
+ * berjalan di belakang. Bila server menolak, daftar dikembalikan persis
+ * seperti sebelumnya dan admin diberi tahu alasannya.
+ *
+ * @param {string}   id
+ * @param {?string}  statusBaru  'Disetujui' | 'Ditolak' | null (= dihapus)
+ * @param {Function} panggil     () => Promise<balasan server>
+ */
+async function prosesPengajuanInstan(id, statusBaru, panggil) {
+  const d = AdminState.data;
+  const cadangan = (d.pengajuan || []).map(function (x) { return Object.assign({}, x); });
+
+  d.pengajuan = statusBaru === null
+    ? d.pengajuan.filter(function (x) { return String(x.ID) !== String(id); })
+    : d.pengajuan.map(function (x) {
+        return String(x.ID) === String(id) ? Object.assign({}, x, { Status: statusBaru }) : x;
+      });
+  renderPengajuan();
+
+  const res = await panggil();
+
+  if (!res.success) {
+    d.pengajuan = cadangan;
+    renderPengajuan();
+    showToast('Gagal', res.message, 'danger');
+    return;
+  }
+
+  const gagalNotif = res.data && res.data.notifikasi &&
+    ['wa', 'email'].some(function (k) { return res.data.notifikasi[k] && res.data.notifikasi[k].status === 'gagal'; });
+  showToast(gagalNotif ? 'Selesai, notifikasi bermasalah' : 'Berhasil', res.message, gagalNotif ? 'warning' : 'success');
+
+  // Testimoni & galeri ikut berubah saat disetujui — segarkan diam-diam
+  muatDataAdmin();
+}
+
 function setujuiPengajuanKonfirmasi(id) {
   konfirmasi(
     'Setujui kiriman ini? Testimoninya akan langsung tayang di landing page, ' +
     'dan gambar buktinya masuk ke section Bukti Nyata.',
-    async function () {
-      const res = await Api.setujuiPengajuan(id);
-      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
-      if (res.success) muatDataAdmin();
+    function (kirim) {
+      prosesPengajuanInstan(id, 'Disetujui', function () {
+        return Api.setujuiPengajuan(id, { notify: kirim !== false });
+      });
     },
-    { label: 'Setujui & Tayangkan', jenis: 'primary' });
+    { label: 'Setujui & Tayangkan', jenis: 'primary', centang: opsiCentangNotif(cariPengajuanLokal(id)) });
 }
 
 function tolakPengajuanKonfirmasi(id) {
   konfirmasi(
     'Tolak kiriman ini? Datanya tetap tersimpan sebagai arsip, ' +
     'hanya saja tidak akan ditayangkan.',
-    async function () {
-      const res = await Api.tolakPengajuan(id);
-      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
-      if (res.success) muatDataAdmin();
+    function (kirim) {
+      prosesPengajuanInstan(id, 'Ditolak', function () {
+        return Api.tolakPengajuan(id, kirim !== false);
+      });
     },
-    { label: 'Tolak', jenis: 'danger' });
+    { label: 'Tolak', jenis: 'danger', centang: opsiCentangNotif(cariPengajuanLokal(id)) });
 }
 
 function hapusPengajuanKonfirmasi(id) {
+  const p = cariPengajuanLokal(id);
+  const centang = opsiCentangNotif(p);
+  if (centang) centang.keterangan += ' Lepas centang untuk kiriman spam.';
   konfirmasi(
     'Hapus kiriman ini secara permanen? Testimoni yang sudah terlanjur tayang ' +
     'tidak ikut terhapus.',
-    async function () {
-      const res = await Api.hapusPengajuan(id);
-      showToast(res.success ? 'Berhasil' : 'Gagal', res.message, res.success ? 'success' : 'danger');
-      if (res.success) muatDataAdmin();
+    function (kirim) {
+      prosesPengajuanInstan(id, null, function () {
+        return Api.hapusPengajuan(id, kirim !== false);
+      });
+    },
+    { label: 'Hapus', jenis: 'danger', centang: centang });
+}
+
+async function kirimUlangNotif(id, btn) {
+  const pulih = setBtnLoading(btn, 'Mengirim…');
+  const res = await Api.kirimUlangNotif(id);
+  pulih();
+  showToast(res.success ? 'Terkirim' : 'Gagal', res.message, res.success ? 'success' : 'danger');
+  if (res.success || (res.data && res.data.notifikasi)) muatDataAdmin();
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 16: AKSES ADMIN (Google)
+// ════════════════════════════════════════════════════════════
+
+function isiFormAkses() {
+  const d = AdminState.data || {};
+  const c = d.config || {};
+  const el = document.getElementById('cfgAdminEmails');
+  if (el) el.value = String(c.adminEmails || '').split(/[\s,;]+/).filter(Boolean).join(',\n');
+  const saya = document.getElementById('aksesEmailSaya');
+  if (saya) saya.textContent = (d.sesi && d.sesi.email) || '—';
+}
+
+async function submitAkses(e) {
+  e.preventDefault();
+  const daftar = document.getElementById('cfgAdminEmails').value;
+  const btn = e.target.querySelector('button[type="submit"]');
+  const pulih = setBtnLoading(btn);
+  const res = await Api.simpanKonfigurasi({ adminEmails: daftar });
+  pulih();
+  showToast(res.success ? 'Tersimpan' : 'Gagal', res.success
+    ? 'Daftar admin diperbarui. Email yang dicoret langsung kehilangan akses.' : res.message,
+    res.success ? 'success' : 'danger');
+  if (!res.success) e.target.dataset.kotor = '1';
+  if (res.success) muatDataAdmin();
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 17: NOTIFIKASI MEMBER (WhatsApp Fonnte & Email)
+// ════════════════════════════════════════════════════════════
+
+const JENIS_TPL = ['Setuju', 'Tolak', 'Hapus'];
+const JENIS_TPL_SERVER = { Setuju: 'setuju', Tolak: 'tolak', Hapus: 'hapus' };
+
+function saklarNyala(v) {
+  return String(v) === '1' || String(v).toLowerCase() === 'true';
+}
+
+function isiFormNotifikasi() {
+  const c = (AdminState.data && AdminState.data.config) || {};
+  const set = function (id, v) { const el = document.getElementById(id); if (el) el.value = v; };
+
+  set('cfgNotifWa', saklarNyala(c.notifWaAktif) ? '1' : '0');
+  set('cfgNotifEmail', saklarNyala(c.notifEmailAktif) ? '1' : '0');
+  set('cfgSiteUrl', c.siteUrl || '');
+  set('cfgFonnteToken', '');
+
+  const token = document.getElementById('cfgFonnteToken');
+  const hint = document.getElementById('fonnteHint');
+  if (token) {
+    token.placeholder = c.fonnteTokenTersimpan
+      ? 'Tersimpan (••••' + c.fonnteTokenAkhir + ') — kosongkan untuk mempertahankan'
+      : 'Tempel token dari dashboard Fonnte';
+  }
+  if (hint) {
+    hint.innerHTML = c.fonnteTokenTersimpan
+      ? 'Token tersimpan di server dan tidak pernah ditampilkan ulang. Isi kolom ini hanya bila ingin menggantinya.'
+      : 'Ambil di fonnte.com → menu <strong>Device</strong> → salin <strong>Token</strong>.';
+  }
+
+  JENIS_TPL.forEach(function (j) {
+    ['Wa', 'EmailSubjek', 'Email'].forEach(function (bagian) {
+      set('tpl' + j + bagian, c['tpl' + j + bagian] || '');
     });
+  });
+
+  // Lencana status di kepala tiap kartu
+  const waNyala = saklarNyala(c.notifWaAktif);
+  lencanaStatus('statusWa',
+    waNyala && c.fonnteTokenTersimpan ? ['Aktif', 'badge-success']
+      : waNyala ? ['Token belum diisi', 'badge-warning'] : ['Nonaktif', 'badge-neutral']);
+  lencanaStatus('statusEmail', saklarNyala(c.notifEmailAktif) ? ['Aktif', 'badge-success'] : ['Nonaktif', 'badge-neutral']);
+
+  gantiKanalUji();
+}
+
+function lencanaStatus(id, pasangan) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = pasangan[0];
+  el.className = 'badge-chip ' + pasangan[1];
+}
+
+function pilihTabTemplat(jenis) {
+  AdminState.tabTpl = jenis;
+  document.querySelectorAll('[data-tpl-tab]').forEach(function (b) {
+    const aktif = b.dataset.tplTab === jenis;
+    b.classList.toggle('aktif', aktif);
+    b.setAttribute('aria-selected', aktif ? 'true' : 'false');
+  });
+  document.querySelectorAll('[data-tpl-panel]').forEach(function (p) {
+    p.hidden = p.dataset.tplPanel !== jenis;
+  });
+  AdminState.kolomTplTerakhir = null;
+}
+
+/**
+ * Tandai form yang punya isian belum tersimpan. Tanda dilepas saat form
+ * dikirim; sampai saat itu, pembaruan data di latar tidak menyentuhnya.
+ */
+function pasangPenandaFormKotor() {
+  const tandai = function (e) {
+    const f = e.target && e.target.closest && e.target.closest('form');
+    if (f) f.dataset.kotor = '1';
+  };
+  document.addEventListener('input', tandai);
+  document.addEventListener('change', tandai);
+  document.addEventListener('submit', function (e) { if (e.target) e.target.dataset.kotor = ''; }, true);
+}
+
+/** Ingat kolom templat terakhir yang disentuh — tujuan tombol penanda. */
+function pasangPelacakKolomTemplat() {
+  document.addEventListener('focusin', function (e) {
+    if (e.target && e.target.classList && e.target.classList.contains('tpl-isi')) {
+      AdminState.kolomTplTerakhir = e.target;
+    }
+  });
+}
+
+/** Sisipkan {penanda} tepat di posisi kursor, tanpa menghapus teks yang ada. */
+function sisipkanPenanda(teks) {
+  let el = AdminState.kolomTplTerakhir;
+  if (!el || el.closest('[data-tpl-panel]').hidden) {
+    el = document.getElementById('tpl' + AdminState.tabTpl + 'Wa');
+  }
+  const awal = typeof el.selectionStart === 'number' ? el.selectionStart : el.value.length;
+  const akhir = typeof el.selectionEnd === 'number' ? el.selectionEnd : awal;
+  el.value = el.value.slice(0, awal) + teks + el.value.slice(akhir);
+  el.focus();
+  el.setSelectionRange(awal + teks.length, awal + teks.length);
+  el.dispatchEvent(new Event('input', { bubbles: true }));   // form ikut ditandai belum tersimpan
+}
+
+function gantiKanalUji() {
+  const kanal = document.getElementById('ujiKanal');
+  const tujuan = document.getElementById('ujiTujuan');
+  if (!kanal || !tujuan) return;
+  if (kanal.value === 'email') {
+    tujuan.type = 'email';
+    tujuan.placeholder = 'nama@gmail.com';
+    const saya = AdminState.data && AdminState.data.sesi && AdminState.data.sesi.email;
+    if (!tujuan.value || !/@/.test(tujuan.value)) tujuan.value = saya || '';
+  } else {
+    tujuan.type = 'tel';
+    tujuan.placeholder = '081234567890';
+    if (/@/.test(tujuan.value)) tujuan.value = '';
+  }
+}
+
+async function kirimUjiNotifikasi(btn) {
+  const kanal = document.getElementById('ujiKanal').value;
+  const tujuan = document.getElementById('ujiTujuan').value.trim();
+  if (!tujuan) {
+    showToast('Tujuan kosong', kanal === 'wa' ? 'Isi nomor WhatsApp untuk uji coba.' : 'Isi alamat email untuk uji coba.', 'warning');
+    return;
+  }
+  const j = AdminState.tabTpl;
+  const nilai = function (id) { return document.getElementById(id).value; };
+
+  const pulih = setBtnLoading(btn, 'Mengirim…');
+  const res = await Api.ujiNotifikasi({
+    kanal: kanal, tujuan: tujuan, jenis: JENIS_TPL_SERVER[j],
+    fonnteToken: nilai('cfgFonnteToken').trim(),
+    templat: { wa: nilai('tpl' + j + 'Wa'), subjek: nilai('tpl' + j + 'EmailSubjek'), email: nilai('tpl' + j + 'Email') }
+  });
+  pulih();
+
+  showToast(res.success ? 'Pesan uji terkirim' : 'Uji gagal', res.message, res.success ? 'success' : 'danger');
+  muatDataAdmin();   // riwayat pengiriman ikut bertambah
+}
+
+async function submitNotifikasi(e) {
+  e.preventDefault();
+  const obj = {};
+  new FormData(e.target).forEach(function (v, k) { obj[k] = v; });
+
+  const btn = e.target.querySelector('button[type="submit"]');
+  const pulih = setBtnLoading(btn);
+  const res = await Api.simpanKonfigurasi(obj);
+  pulih();
+
+  showToast(res.success ? 'Tersimpan' : 'Gagal',
+    res.success ? 'Pengaturan notifikasi diperbarui.' : res.message,
+    res.success ? 'success' : 'danger');
+  if (!res.success) e.target.dataset.kotor = '1';   // isian tetap dilindungi
+
+  if (res.success) {
+    document.getElementById('cfgFonnteToken').value = '';
+    document.getElementById('cfgFonnteToken').blur();
+    muatDataAdmin();
+  }
+}
+
+function renderLogNotif() {
+  const wrap = document.getElementById('logNotifWrap');
+  if (!wrap) return;
+  const log = (AdminState.data && AdminState.data.logNotifikasi) || [];
+
+  if (!log.length) {
+    wrap.innerHTML = '<div class="empty-state" style="padding:36px 20px">' +
+      '<p class="body-sm" style="margin:0">Belum ada notifikasi yang dikirim. ' +
+      'Riwayat muncul di sini setelah Anda memproses pengajuan atau mengirim uji coba.</p></div>';
+    return;
+  }
+
+  wrap.innerHTML = '<table class="tbl"><thead><tr>' +
+    '<th>Waktu</th><th>Peristiwa</th><th>Member</th><th>Kanal</th><th>Tujuan</th><th>Status</th>' +
+    '</tr></thead><tbody>' +
+    log.map(function (l) {
+      const st = String(l.Status || '');
+      return '<tr>' +
+        '<td class="text-secondary" style="white-space:nowrap">' + esc(l.Waktu) + '</td>' +
+        '<td>' + esc(l.Jenis) + '</td>' +
+        '<td>' + esc(l.Nama) + '</td>' +
+        '<td>' + esc(l.Kanal) + '</td>' +
+        '<td class="text-secondary">' + esc(l.Tujuan) + '</td>' +
+        '<td><span class="log-status ' + esc(st) + '">' + esc(st) + '</span>' +
+          (l.Keterangan && st !== 'terkirim'
+            ? '<div class="body-sm text-secondary">' + esc(l.Keterangan) + '</div>' : '') +
+        '</td>' +
+      '</tr>';
+    }).join('') +
+    '</tbody></table>';
+}
+
+// ════════════════════════════════════════════════════════════
+// BAGIAN 18: MIGRASI DATA — import dari app lama
+// ════════════════════════════════════════════════════════════
+
+/** Cermin RENCANA_IMPORT di Kode.gs — urutan & pilihan bawaannya sama. */
+const PILIHAN_IMPORT = [
+  { sheet: 'AppConfig',     label: 'Pengaturan',     bawaan: true },
+  { sheet: 'KontenHero',    label: 'Konten Hero',    bawaan: true },
+  { sheet: 'Produk',        label: 'Produk',         bawaan: true },
+  { sheet: 'Keunggulan',    label: 'Keunggulan',     bawaan: true },
+  { sheet: 'Testimoni',     label: 'Testimoni',      bawaan: true },
+  { sheet: 'Galeri',        label: 'Bukti Nyata',    bawaan: true },
+  { sheet: 'Pengajuan',     label: 'Pengajuan',      bawaan: true },
+  { sheet: 'Pesan',         label: 'Pesan Kontak',   bawaan: true },
+  { sheet: 'Statistik',     label: 'Statistik',      bawaan: true },
+  { sheet: 'LogNotifikasi', label: 'Log Notifikasi', bawaan: false }
+];
+
+function renderPilihanImport() {
+  const wrap = document.getElementById('impSheets');
+  if (!wrap) return;
+  wrap.innerHTML = PILIHAN_IMPORT.map(function (p) {
+    return '<label class="cek-baris"><input type="checkbox" value="' + p.sheet + '"' +
+      (p.bawaan ? ' checked' : '') + ' onchange="batalkanPindai()"><span>' + esc(p.label) + '</span></label>';
+  }).join('');
+
+  const sumber = document.getElementById('impSumber');
+  if (sumber) sumber.addEventListener('input', batalkanPindai);
+  ['impTimpa', 'impBuangContoh'].forEach(function (id) {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener('change', batalkanPindai);
+  });
+}
+
+/** Pilihan berubah → hasil pindai lama tidak lagi berlaku. */
+function batalkanPindai() {
+  AdminState.pindaiSumber = '';
+  const btn = document.getElementById('impJalankanBtn');
+  if (btn) btn.disabled = true;
+  const hint = document.getElementById('impHint');
+  if (hint) hint.textContent = 'Pilihan berubah — pindai ulang dulu sebelum menjalankan import.';
+}
+
+function bacaFormImport() {
+  return {
+    sumber: document.getElementById('impSumber').value.trim(),
+    sheets: Array.prototype.map.call(
+      document.querySelectorAll('#impSheets input:checked'), function (el) { return el.value; }),
+    timpa: document.getElementById('impTimpa').checked,
+    buangContoh: document.getElementById('impBuangContoh').checked
+  };
+}
+
+async function jalankanImport(dryRun, btn) {
+  const f = bacaFormImport();
+  if (!f.sumber) { showToast('Sumber kosong', 'Tempel URL spreadsheet app lama lebih dulu.', 'warning'); return; }
+  if (!f.sheets.length) { showToast('Tidak ada yang dipilih', 'Centang minimal satu jenis data.', 'warning'); return; }
+
+  const kerjakan = async function () {
+    const pulih = setBtnLoading(btn, dryRun ? 'Memindai…' : 'Mengimpor…');
+    const res = await Api.importData(Object.assign({ dryRun: dryRun }, f));
+    pulih();
+
+    if (!res.success) {
+      showToast(dryRun ? 'Pindai gagal' : 'Import gagal', res.message, 'danger');
+      return;
+    }
+
+    renderHasilImport(res.data);
+    const jalankan = document.getElementById('impJalankanBtn');
+    const hint = document.getElementById('impHint');
+
+    if (dryRun) {
+      AdminState.pindaiSumber = JSON.stringify(f);
+      jalankan.disabled = false;
+      hint.textContent = 'Hasil pindai di bawah. Bila sudah sesuai, tekan Jalankan Import.';
+      showToast('Pindai selesai', 'Belum ada yang ditulis — periksa hasilnya di bawah.', 'success');
+    } else {
+      AdminState.pindaiSumber = '';
+      jalankan.disabled = true;
+      hint.textContent = 'Import selesai. Jalankan lagi (pindai → import) tepat sebelum pindah untuk menangkap data terbaru.';
+      showToast('Import selesai', res.message, 'success');
+      muatDataAdmin();
+    }
+    document.getElementById('impHasil').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  };
+
+  if (dryRun) return kerjakan();
+
+  if (AdminState.pindaiSumber !== JSON.stringify(f)) {
+    showToast('Pindai dulu', 'Pilihan sudah berubah sejak pindai terakhir.', 'warning');
+    return;
+  }
+  konfirmasi('Jalankan import sekarang? Data dari app lama akan ditulis ke app ini. ' +
+    'Aman diulang — baris yang sudah ada tidak akan dobel.', kerjakan,
+    { label: 'Jalankan Import', jenis: 'primary' });
+}
+
+function renderHasilImport(h) {
+  const wrap = document.getElementById('impHasil');
+  const lap = h.laporan || {};
+  const angka = function (n, kelas) {
+    return '<td class="imp-angka' + (n ? ' ' + kelas : '') + '">' + (n || 0) + '</td>';
+  };
+
+  wrap.innerHTML = '<div class="card">' +
+    '<div class="card-pad" style="padding-bottom:0">' +
+      '<div class="row-between" style="flex-wrap:wrap">' +
+        '<h3 class="h-md" style="margin:0">' + (h.dryRun ? 'Hasil Pindai' : 'Hasil Import') + '</h3>' +
+        '<span class="badge-chip ' + (h.dryRun ? 'badge-neutral' : 'badge-success') + '">' +
+          (h.dryRun ? 'Belum ada yang ditulis' : 'Sudah ditulis') + '</span>' +
+      '</div>' +
+      '<p class="body-sm text-secondary" style="margin:6px 0 0">Sumber: <strong>' + esc(h.sumber.nama) + '</strong></p>' +
+    '</div>' +
+    '<div class="table-wrap" style="margin-top:16px"><table class="tbl"><thead><tr>' +
+      '<th>Data</th><th style="text-align:right">Di app lama</th><th style="text-align:right">Ditambah</th>' +
+      '<th style="text-align:right">Diperbarui</th><th style="text-align:right">Dilewati</th>' +
+      '<th style="text-align:right">Contoh dibuang</th></tr></thead><tbody>' +
+      (h.urutan || Object.keys(lap)).map(function (k) {
+        const r = lap[k] || {};
+        return '<tr><td><strong>' + esc(r.label || k) + '</strong>' +
+          (r.catatan ? '<div class="body-sm text-secondary">' + esc(r.catatan) + '</div>' : '') + '</td>' +
+          '<td class="imp-angka">' + (r.sumber || 0) + '</td>' +
+          angka(r.ditambah, 'plus') + angka(r.diperbarui, 'ubah') +
+          '<td class="imp-angka">' + (r.dilewati || 0) + '</td>' +
+          angka(r.dibuang, 'buang') + '</tr>';
+      }).join('') +
+    '</tbody></table></div>' +
+    ((h.peringatan || []).length
+      ? '<div class="card-pad" style="border-top:1px solid var(--border)">' +
+          '<div class="label-md" style="margin-bottom:10px">Catatan</div>' +
+          '<ul class="imp-peringatan">' + h.peringatan.map(function (w) { return '<li>' + esc(w) + '</li>'; }).join('') + '</ul>' +
+        '</div>'
+      : '') +
+  '</div>';
+}
+
+function renderImportTerakhir() {
+  const el = document.getElementById('impTerakhir');
+  if (!el) return;
+  const t = AdminState.data && AdminState.data.importTerakhir;
+  el.innerHTML = t
+    ? 'Import terakhir: <strong>' + esc(t.waktu) + '</strong> dari <em>' + esc(t.sumber) + '</em> — ' +
+      Number(t.ditambah) + ' ditambah, ' + Number(t.diperbarui) + ' diperbarui.'
+    : '';
 }

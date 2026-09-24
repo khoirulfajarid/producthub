@@ -22,7 +22,7 @@
 const APP_CONFIG = {
 
   /** URL Web App Google Apps Script — WAJIB diisi. */
-  GAS_URL: 'https://script.google.com/macros/s/AKfycbwvzeDcksgImKG4nRq0NK9Lqs51haIkr28PbY5TjMD7JWPnI-56R4vhNrcdnLgd0mPwEg/exec',
+  GAS_URL: 'https://script.google.com/macros/s/AKfycby08p85S-tR4kC2gaw8mmXWVfUh7ccsfFN5zLTtcF64R6VFxOpVEoMd5PAXJmGfFhWQ/exec',
 
   /** Nama brand cadangan, dipakai sebelum data dari server tiba. */
   BRAND_DEFAULT: 'ProductHub',

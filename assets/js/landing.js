@@ -63,7 +63,33 @@ document.addEventListener('DOMContentLoaded', function () {
   });
 
   muatDataAwal();
+  pasangPrefetch();
 });
+
+/**
+ * Muat halaman tujuan di latar begitu kursor mendekati tautannya
+ * (atau jari menyentuhnya). Saat benar-benar diklik, halaman sudah
+ * ada di cache browser dan terbuka hampir seketika.
+ */
+function pasangPrefetch() {
+  const sudah = {};
+  document.querySelectorAll('a[data-prefetch]').forEach(function (a) {
+    const muat = function () {
+      const url = a.getAttribute('href');
+      if (!url || sudah[url]) return;
+      sudah[url] = true;
+      ['', 'assets/js/admin.js'].forEach(function (x) {
+        const l = document.createElement('link');
+        l.rel = 'prefetch';
+        l.href = x || url;
+        document.head.appendChild(l);
+      });
+    };
+    a.addEventListener('mouseenter', muat, { once: true });
+    a.addEventListener('touchstart', muat, { once: true, passive: true });
+    a.addEventListener('focus', muat, { once: true });
+  });
+}
 
 /**
  * Panah kiri/kanan pada keyboard menggerakkan lightbox dan popup produk.
@@ -99,26 +125,60 @@ function hentikanVideo(wadah) {
 }
 
 /** Satu panggilan server untuk seluruh isi landing page. */
+/** Salinan data terakhir di browser pengunjung (stale-while-revalidate). */
+const KUNCI_SALINAN_INIT = 'ph_init_salinan';
+
+/**
+ * Muat isi halaman tanpa membuat pengunjung menunggu Apps Script.
+ *
+ * Apps Script yang sedang "tidur" bisa butuh 1–3 detik untuk bangun.
+ * Pengunjung yang pernah datang tidak perlu merasakannya lagi:
+ *   1. Salinan terakhir dari localStorage langsung digambar (0 ms).
+ *   2. Data segar tetap diminta di latar belakang.
+ *   3. Halaman digambar ulang HANYA bila isinya memang berubah.
+ * Kunjungan pertama berjalan seperti biasa (dengan layar memuat).
+ */
 async function muatDataAwal() {
+  let salinan = null;
+  try { salinan = JSON.parse(localStorage.getItem(KUNCI_SALINAN_INIT) || 'null'); } catch (e) {}
+  // Salinan dari backend lain (GAS_URL diganti) tidak boleh dipakai
+  if (salinan && salinan.url !== APP_CONFIG.GAS_URL) salinan = null;
+
+  if (salinan && salinan.data) {
+    terapkanDataLanding(salinan.data);
+    sembunyikanOverlay();
+  }
+
   const res = await Api.init();
 
   if (!res.success) {
+    // Server sedang bermasalah tapi salinan ada: pengunjung tetap
+    // melihat halaman utuh, bukan pesan galat.
+    if (salinan) return;
     sembunyikanOverlay();
     tampilkanGagalMuat(res.message);
     return;
   }
 
-  AppState.produk     = res.data.produk || [];
-  AppState.hero       = res.data.hero || {};
-  AppState.keunggulan = res.data.keunggulan || [];
-  AppState.testimoni  = res.data.testimoni || [];
-  AppState.galeri     = res.data.galeri || [];
-  AppState.config     = res.data.config || {};
+  const segar = JSON.stringify(res.data);
+  try {
+    localStorage.setItem(KUNCI_SALINAN_INIT, JSON.stringify({ url: APP_CONFIG.GAS_URL, t: Date.now(), data: res.data }));
+  } catch (e) { /* penyimpanan penuh/diblokir — tidak apa-apa */ }
 
-  renderLanding();
+  if (!salinan || JSON.stringify(salinan.data) !== segar) terapkanDataLanding(res.data);
   sembunyikanOverlay();
 
   catatKunjungan();
+}
+
+function terapkanDataLanding(d) {
+  AppState.produk     = d.produk || [];
+  AppState.hero       = d.hero || {};
+  AppState.keunggulan = d.keunggulan || [];
+  AppState.testimoni  = d.testimoni || [];
+  AppState.galeri     = d.galeri || [];
+  AppState.config     = d.config || {};
+  renderLanding();
 }
 
 /**
@@ -774,11 +834,47 @@ function renderGaleriBukti() {
   section.classList.remove('hidden');
   document.getElementById('buktiMarquee').classList.remove('hidden');
 
-  isiMarquee('buktiTrack',
-    list.map(function (g, i) { return kartuBukti(g, i); }),
-    c.galeriSpeed || 45);
+  // ── Bagi ke tiga baris ──
+  // Indeks asli (i) tetap dibawa supaya lightbox membuka gambar yang benar.
+  const kartu = list.map(function (g, i) { return { g: g, i: i }; });
+  const n = kartu.length;
+  let baris;
+  if (n >= 6) {
+    // Cukup banyak: dibagi bergiliran, tiap baris berisi gambar berbeda
+    baris = [0, 1, 2].map(function (b) {
+      return kartu.filter(function (_, k) { return k % 3 === b; });
+    });
+  } else if (n >= 3) {
+    // Sedikit: tiap baris memuat semuanya tapi mulai dari gambar berbeda,
+    // sehingga tiga baris tidak pernah tampak kembar
+    const geser = Math.max(1, Math.floor(n / 3));
+    baris = [0, 1, 2].map(function (b) {
+      const m = (b * geser) % n;
+      return kartu.slice(m).concat(kartu.slice(0, m));
+    });
+  } else {
+    // 1–2 gambar: tiga baris kembar justru terlihat rusak — cukup satu
+    baris = [kartu, [], []];
+  }
 
-  pasangJeda(document.getElementById('buktiMarquee'));
+  // Lebih lambat dari marquee lain dan dihitung per kartu: baris yang isinya
+  // lebih sedikit tidak jadi melaju lebih cepat. Selisih kecil antarbaris
+  // mencegah ketiganya bergerak serempak seperti satu papan.
+  const detikPerKartu = (Number(c.galeriSpeed) || 45) / 6 * 1.6;
+  const variasi = [1, 1.12, 1.24];
+
+  baris.forEach(function (isi, b) {
+    const el = document.getElementById('buktiBaris' + (b + 1));
+    if (!isi.length) { el.classList.add('hidden'); return; }
+    el.classList.remove('hidden');
+
+    const panjangDasar = isi.length * Math.ceil(6 / isi.length);   // sama dengan isiMarquee
+    isiMarquee('buktiTrack' + (b + 1),
+      isi.map(function (x) { return kartuBukti(x.g, x.i); }),
+      Math.round(panjangDasar * detikPerKartu * variasi[b]));
+
+    pasangJeda(el);
+  });
 }
 
 /** Satu kartu bukti. Video ditandai jelas agar tidak dikira gambar diam. */
@@ -981,7 +1077,8 @@ function detailGoTo(i) {
 function siapkanFormKirim() {
   // Tautan langsung index.html#kirim membuka form seketika — memudahkan
   // admin membagikan satu tautan saja ke grup membernya.
-  if (window.location.hash === '#kirim') {
+  if (window.location.hash === '#kirim' && !AppState.hashKirimDibuka) {
+    AppState.hashKirimDibuka = true;
     setTimeout(bukaFormKirim, 400);
   }
 }
@@ -1099,7 +1196,10 @@ function siapkanFormKontak() {
   form.classList.toggle('hidden', !adaEmail);
 
   // Tautan langsung index.html#kontak membuka modal seketika
-  if (window.location.hash === '#kontak') setTimeout(bukaFormKontak, 400);
+  if (window.location.hash === '#kontak' && !AppState.hashKontakDibuka) {
+    AppState.hashKontakDibuka = true;
+    setTimeout(bukaFormKontak, 400);
+  }
 }
 
 /** Buka modal kontak dalam keadaan bersih. */

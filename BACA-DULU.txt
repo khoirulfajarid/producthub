@@ -1,9 +1,9 @@
-ProductHub Creator — Paket Upgrade v3.1
-========================================
+ProductHub Creator — Paket Upgrade v4
+======================================
 
 Isi ZIP ini adalah 7 BERKAS PENGGANTI untuk repo producthub Anda.
-Struktur folder di dalam ZIP sudah persis sama dengan struktur repo,
-jadi cukup salin seluruh isinya ke folder repo dan pilih "Replace".
+Struktur folder di dalam ZIP sama persis dengan struktur repo, jadi
+cukup salin seluruh isinya ke folder repo dan pilih "Replace".
 
   index.html
   admin.html
@@ -14,11 +14,13 @@ jadi cukup salin seluruh isinya ke folder repo dan pilih "Replace".
   assets/js/admin.js
 
 PENTING — assets/js/config.js SENGAJA TIDAK ADA di ZIP ini.
-Berkas itu menyimpan GAS_URL Anda. Kalau ikut ditimpa, URL Apps
-Script Anda akan hilang dan situs berhenti memuat data. Karena
-tidak ada di sini, config.js Anda otomatis aman.
+Berkas itu menyimpan GAS_URL Anda, jadi tidak mungkin tertimpa.
 
-Backend (Kode.gs) dikirim TERPISAH di percakapan, bukan di ZIP ini,
-karena isinya disalin-tempel ke editor Apps Script.
+URUTAN WAJIB (login PIN mati begitu backend v4 aktif):
+  1. Buat Client ID Google        (Tahap A)
+  2. Tempel Kode.gs, isi GOOGLE_CLIENT_ID, jalankan upgradeKeV4(),
+     Deploy → New version        (Tahap B)
+  3. Push berkas ZIP ini          (Tahap C)
 
-Langkah lengkapnya ada di PANDUAN-UPGRADE-V31.md
+Backend (Kode.gs) dikirim TERPISAH di percakapan, bukan di ZIP ini.
+Langkah lengkap: PANDUAN-UPGRADE-V4.md

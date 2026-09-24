@@ -42,6 +42,10 @@
   }
   </script>
 
+  <!-- Buka jalur ke Apps Script sebelum JavaScript memintanya: panggilan
+       data pertama tidak perlu lagi menunggu DNS + TLS (±100–300 ms). -->
+  <link rel="preconnect" href="https://script.google.com">
+  <link rel="preconnect" href="https://script.googleusercontent.com">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -104,11 +108,6 @@
       <button class="btn-icon" onclick="toggleTheme()" aria-label="Ganti mode gelap/terang">
         <span data-theme-icon></span>
       </button>
-      <!-- Dashboard kini halaman tersendiri: tautan biasa, bukan modal -->
-      <a class="btn-icon" href="admin.html" aria-label="Masuk panel admin" title="Panel Admin"
-         rel="nofollow">
-        <span data-icon="shield"></span>
-      </a>
       <a id="navCta" class="btn btn-primary btn-sm" href="#" target="_blank" rel="noopener"
          onclick="trackCta('nav')">Mulai Sekarang</a>
     </div>
@@ -251,9 +250,22 @@
     </div>
   </div>
 
-  <div class="marquee" id="buktiMarquee">
-    <div class="marquee-track to-right" id="buktiTrack"></div>
-    <div class="paused-hint">Dijeda</div>
+  <!-- Tiga baris berlawanan arah. Tiap baris berhenti sendiri saat
+       disentuh/dilewati kursor, jadi pengunjung bisa membaca satu gambar
+       tanpa membekukan dua baris lainnya. -->
+  <div id="buktiMarquee">
+    <div class="marquee bukti-baris" id="buktiBaris1">
+      <div class="marquee-track to-right" id="buktiTrack1"></div>
+      <div class="paused-hint">Dijeda</div>
+    </div>
+    <div class="marquee bukti-baris" id="buktiBaris2">
+      <div class="marquee-track" id="buktiTrack2"></div>
+      <div class="paused-hint">Dijeda</div>
+    </div>
+    <div class="marquee bukti-baris" id="buktiBaris3">
+      <div class="marquee-track to-right" id="buktiTrack3"></div>
+      <div class="paused-hint">Dijeda</div>
+    </div>
   </div>
 
   <div class="container-ph center" style="margin-top:40px" data-kirim-cta>
@@ -315,7 +327,7 @@
         <ul>
           <li id="footerWaItem"><a id="footerWa" href="#" target="_blank" rel="noopener">Hubungi via WhatsApp</a></li>
           <li data-kontak-cta><a href="#" onclick="bukaFormKontak('footer'); return false;">Kirim Pesan / Email</a></li>
-          <li><a href="admin.html" rel="nofollow">Panel Admin</a></li>
+          <li><a href="admin.html" rel="nofollow" data-prefetch>Panel Admin</a></li>
         </ul>
       </div>
     </div>
